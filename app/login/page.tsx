@@ -31,39 +31,41 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
+    <div className="min-h-screen bg-gray-50 dark:bg-black flex items-center justify-center">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-sm space-y-4 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 shadow-sm"
+        className="bg-white dark:bg-zinc-900 p-8 rounded-2xl w-80 flex flex-col gap-4"
       >
-        <h1 className="text-lg font-semibold tracking-tight">Sign in</h1>
+        <h1 className="text-gray-900 dark:text-white text-2xl font-light tracking-widest text-center">
+          BØTKJÆR LABS
+        </h1>
 
-        <div className="space-y-2">
-          <input
-            type="text"
-            placeholder="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoFocus
-            className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-400 dark:focus:border-zinc-500"
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-transparent px-3 py-2 text-sm outline-none focus:border-zinc-400 dark:focus:border-zinc-500"
-          />
-        </div>
+        <input
+          type="text"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoFocus
+          autoComplete="username"
+          className="bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-white rounded-lg px-4 py-2 outline-none focus:ring-1 focus:ring-zinc-500"
+        />
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="current-password"
+          className="bg-gray-100 dark:bg-zinc-800 text-gray-900 dark:text-white rounded-lg px-4 py-2 outline-none focus:ring-1 focus:ring-zinc-500"
+        />
 
-        {error && <p className="text-sm text-red-500">{error}</p>}
+        {error && <p className="text-red-400 text-sm text-center">{error}</p>}
 
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-lg bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 text-sm font-medium py-2 transition-opacity disabled:opacity-50"
+          className="bg-zinc-900 text-white rounded-lg py-2 font-medium hover:bg-zinc-800 dark:bg-white dark:text-black dark:hover:bg-zinc-200 disabled:opacity-50 transition"
         >
-          {loading ? "Signing in…" : "Sign in"}
+          {loading ? "Entering…" : "Enter"}
         </button>
       </form>
     </div>
