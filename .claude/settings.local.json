@@ -57,7 +57,40 @@
       "Bash(curl -sI http://localhost:3000/lab)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" -X POST http://localhost:3000/api/lab-login -H \"Content-Type: application/json\" -d '{\"username\":\"adam\",\"password\":\"wrong\"}')",
       "Bash(curl -s -c /tmp/cookies.txt -o /dev/null -w \"%{http_code}\\\\n\" -X POST http://localhost:3000/api/lab-login -H \"Content-Type: application/json\" -d '{\"username\":\"adam\",\"password\":\"branco\"}')",
-      "Bash(curl -s -b /tmp/cookies.txt -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/lab)"
+      "Bash(curl -s -b /tmp/cookies.txt -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/lab)",
+      "Bash(curl -s -k https://boetkjaer.com/)",
+      "Bash(curl -s -k -o /dev/null -w \"%{http_code} -> \" https://boetkjaer.com/lab)",
+      "Bash(curl -s -k -I https://boetkjaer.com/lab)",
+      "Bash(curl -s -k -o /dev/null -w \"%{http_code}\\\\n\" -X POST https://boetkjaer.com/api/lab-login -H \"Content-Type: application/json\" -d '{\"username\":\"adam\",\"password\":\"wrong\"}')",
+      "Bash(curl -s -k -c /tmp/prod-cookies.txt -o /dev/null -w \"%{http_code}\\\\n\" -X POST https://boetkjaer.com/api/lab-login -H \"Content-Type: application/json\" -d '{\"username\":\"adam\",\"password\":\"branco\"}')",
+      "Bash(curl -s -k -b /tmp/prod-cookies.txt -o /dev/null -w \"%{http_code}\\\\n\" https://boetkjaer.com/lab)",
+      "Bash(curl -s -o /dev/null -w \"GET /lab with NO cookie -> %{http_code} \" -k https://boetkjaer.com/lab)",
+      "Bash(npx --yes playwright --version)",
+      "Bash(npx --yes playwright install chromium)",
+      "Bash(npm ls *)",
+      "Bash(node \"/private/tmp/claude-501/-Users-adam-Dokumenter-Documents-Claude-projects-B-tkj-r-com/d724628a-c220-4d80-85e6-a02bb6686cbc/scratchpad/screenshot.mjs\")",
+      "Bash(npm init *)",
+      "Bash(node screenshot.mjs)",
+      "Bash(python3 -c \"import fontTools\" 2>&1; echo \"---\"; ls /System/Library/Fonts/ | grep -i \"ping\\\\|heiti\\\\|hei\\\\|song\\\\|yuan\" 2>&1; ls /System/Library/Fonts/Supplemental/ 2>&1 | grep -i \"ping\\\\|heiti\\\\|hei\\\\|song\\\\|yuan\\\\|STHei\")",
+      "Read(//System/Library/Fonts/**)",
+      "Read(//System/Library/Fonts/Supplemental/**)",
+      "Bash(pip3 install *)",
+      "Bash(ls /System/Library/Fonts/ | grep -i pingfang 2>&1 *)",
+      "Bash(node screenshot2.mjs)",
+      "Bash(node -e ' *)",
+      "WebFetch(domain:developers.strava.com)",
+      "WebFetch(domain:support.strava.com)",
+      "WebFetch(domain:communityhub.strava.com)",
+      "Bash(curl -s -c /tmp/c.txt -o /dev/null -X POST http://localhost:3000/api/lab-login -H \"Content-Type: application/json\" -d '{\"username\":\"adam\",\"password\":\"branco\"}')",
+      "Bash(curl -s -b /tmp/c.txt -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/lab)",
+      "Bash(curl -s -b /tmp/c.txt -c /tmp/c.txt -o /dev/null -w \"%{http_code} -> \" http://localhost:3000/api/lab-logout)",
+      "Bash(curl -s -b /tmp/c.txt -I http://localhost:3000/api/lab-logout)",
+      "Bash(curl -s -b /tmp/c.txt -o /dev/null -w \"%{http_code} -> \" http://localhost:3000/lab)",
+      "Bash(curl -s -b /tmp/c.txt -I http://localhost:3000/lab)",
+      "Bash(mkdir -p \"/Users/adam/Dokumenter/Documents/Claude projects/Bøtkjær.com/public\" *)"
+    ],
+    "additionalDirectories": [
+      "/Users/adam/Dokumenter/Documents/Andet/billeder"
     ]
   }
 }
