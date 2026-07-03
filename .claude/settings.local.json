@@ -1,19 +1,23 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git -C \"/Users/adam/Dokumenter/Documents/Claude projects/Personal site\" status)",
-      "Bash(npx create-next-app@latest . --typescript --tailwind --app --no-src-dir --import-alias \"@/*\" --yes)",
-      "Bash(npx create-next-app@latest . --typescript --tailwind --app --no-src-dir --import-alias \"@/*\" --yes --skip-git)",
-      "Bash(npx create-next-app@latest . --typescript --tailwind --app --no-src-dir --import-alias \"@/*\" --skip-git)",
-      "Bash(node scripts/sync-stats.mjs)",
-      "Bash(ssh -T git@github.com)",
-      "WebFetch(domain:hanzicraft.com)",
-      "Bash(curl -s http://localhost:8765 -X POST -H \"Content-Type: application/json\" -d '{\"action\":\"version\",\"version\":6}')",
-      "Bash(chmod +x \"/Users/adam/Dokumenter/Documents/Claude projects/Anki flashcards/Anki 汉字/sync_and_publish.sh\")",
-      "Bash(npm run *)",
-      "Bash(ls -la .vercel)",
-      "Bash(cat .vercel/project.json)",
-      "Bash(vercel ls *)"
+      "Bash(mkdir -p app/lab)",
+      "Bash(git mv *)",
+      "Bash(mv app/hanzi app/lab/hanzi)",
+      "Bash(mv app/page.tsx app/lab/page.tsx)",
+      "Bash(curl -s -o /dev/null -w \"GET / -> %{http_code}\\\\n\" http://localhost:3001/)",
+      "Bash(curl -s -o /dev/null -w \"GET /lab \\(no auth\\) -> %{http_code}\\\\n\" http://localhost:3001/lab)",
+      "Bash(curl -s -o /dev/null -w \"GET /lab \\(wrong auth\\) -> %{http_code}\\\\n\" -u wrong:creds http://localhost:3001/lab)",
+      "Bash(curl -s -o /dev/null -w \"GET /lab \\(correct auth\\) -> %{http_code}\\\\n\" -u adam:branco http://localhost:3001/lab)",
+      "Bash(curl -s -o /dev/null -w \"GET /lab/hanzi \\(correct auth\\) -> %{http_code}\\\\n\" -u adam:branco http://localhost:3001/lab/hanzi)",
+      "Bash(curl -s -o /dev/null -w \"GET / -> %{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(mv '/Users/adam/Dokumenter/Documents/Claude projects/Personal site/.git' '/Users/adam/Dokumenter/Documents/Claude projects/Bøtkjær.com/')",
+      "Bash(mv '/Users/adam/Dokumenter/Documents/Claude projects/Personal site/.claude' '/Users/adam/Dokumenter/Documents/Claude projects/Bøtkjær.com/.claude-source-tmp')",
+      "Bash(echo \"exit code: $?\")",
+      "Bash(vercel whoami *)",
+      "Bash(vercel project *)",
+      "Bash(gh repo *)",
+      "Bash(git ls-remote *)"
     ]
   }
 }

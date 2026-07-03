@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const nav = [
-  { href: "/", label: "Overview", icon: "⊞" },
-  { href: "/hanzi", label: "汉字 Hanzi", icon: "字" },
+  { href: "/lab", label: "Overview", icon: "⊞" },
+  { href: "/lab/hanzi", label: "汉字 Hanzi", icon: "字" },
 ];
 
 export default function BottomNav() {
