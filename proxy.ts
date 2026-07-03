@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { verifySessionToken, LAB_SESSION_COOKIE } from "@/lib/lab-auth";
 
 export function proxy(req: NextRequest) {
-  const expected =
-    "Basic " +
-    Buffer.from(`${process.env.LAB_AUTH_USER}:${process.env.LAB_AUTH_PASSWORD}`).toString("base64");
+  const token = req.cookies.get(LAB_SESSION_COOKIE)?.value;
 
-  if (req.headers.get("authorization") === expected) {
+  if (verifySessionToken(token)) {
     return NextResponse.next();
   }
 
-  return new NextResponse("Authentication required", {
-    status: 401,
-    headers: { "WWW-Authenticate": 'Basic realm="lab"' },
-  });
+  return NextResponse.redirect(new URL("/login", req.url));
 }
 
 export const config = {
