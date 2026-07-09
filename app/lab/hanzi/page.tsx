@@ -7,16 +7,10 @@ import { type HanziCard } from "./CharacterGrid";
 export const dynamic = "force-dynamic";
 
 export default async function HanziPage() {
-  const { data: statsRow } = await supabase
-    .from("anki_stats")
-    .select("*")
-    .eq("id", 1)
-    .single();
-
-  const { data: cardsRows } = await supabase
-    .from("hanzi_cards")
-    .select("*")
-    .order("rank");
+  const [{ data: statsRow }, { data: cardsRows }] = await Promise.all([
+    supabase.from("anki_stats").select("*").eq("id", 1).single(),
+    supabase.from("hanzi_cards").select("*").order("rank"),
+  ]);
 
   const stats = statsRow ?? staticStats;
   const cards = (cardsRows?.length ? cardsRows : staticCards) as HanziCard[];
