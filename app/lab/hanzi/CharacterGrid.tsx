@@ -177,8 +177,23 @@ export default function CharacterGrid({
   const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 });
   const [pinnedPos, setPinnedPos] = useState({ x: 0, y: 0 });
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollingUntil = useRef(0);
 
-  useEffect(() => () => { if (hideTimer.current) clearTimeout(hideTimer.current); }, []);
+  useEffect(() => {
+    const markScrolling = () => { scrollingUntil.current = Date.now() + 200; };
+    window.addEventListener("wheel", markScrolling, { passive: true });
+    window.addEventListener("scroll", markScrolling, { passive: true });
+    return () => {
+      window.removeEventListener("wheel", markScrolling);
+      window.removeEventListener("scroll", markScrolling);
+    };
+  }, []);
+
+  useEffect(() => () => {
+    if (hideTimer.current) clearTimeout(hideTimer.current);
+    if (showTimer.current) clearTimeout(showTimer.current);
+  }, []);
 
   const scheduleHide = useCallback(() => {
     if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -189,16 +204,29 @@ export default function CharacterGrid({
     if (hideTimer.current) { clearTimeout(hideTimer.current); hideTimer.current = null; }
   }, []);
 
+  const scheduleShow = useCallback((card: HanziCard) => {
+    if (showTimer.current) clearTimeout(showTimer.current);
+    showTimer.current = setTimeout(() => {
+      if (Date.now() < scrollingUntil.current) return;
+      setHovered(card);
+    }, 220);
+  }, []);
+
+  const cancelShow = useCallback(() => {
+    if (showTimer.current) { clearTimeout(showTimer.current); showTimer.current = null; }
+  }, []);
+
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!pinned) setHoverPos({ x: e.clientX, y: e.clientY });
   }, [pinned]);
 
   const handleTileClick = useCallback((e: React.MouseEvent<HTMLDivElement>, card: HanziCard) => {
     e.stopPropagation();
+    cancelShow();
     if (pinned?.note_id === card.note_id) { setPinned(null); return; }
     setPinnedPos({ x: e.clientX, y: e.clientY });
     setPinned(card);
-  }, [pinned]);
+  }, [pinned, cancelShow]);
 
   const activeCard = pinned ?? hovered;
   const tooltipX = pinned ? pinnedPos.x : hoverPos.x;
@@ -214,8 +242,8 @@ export default function CharacterGrid({
             key={card.note_id}
             className={tileClass()}
             style={tileStyle(scoreMap?.get(card.note_id), isDark)}
-            onMouseEnter={() => { cancelHide(); if (!pinned) setHovered(card); }}
-            onMouseLeave={scheduleHide}
+            onMouseEnter={() => { cancelHide(); if (!pinned) scheduleShow(card); }}
+            onMouseLeave={() => { cancelShow(); scheduleHide(); }}
             onClick={(e) => handleTileClick(e, card)}
           >
             <span className="text-sm sm:text-xl leading-none select-none">{card.character}</span>
@@ -236,7 +264,7 @@ export default function CharacterGrid({
             <Tooltip card={activeCard} percentile={scoreMap?.get(activeCard.note_id)} />
           </div>
           <div
-            className="hidden sm:block fixed z-50"
+            className={`hidden sm:block fixed z-50 ${pinned ? "" : "pointer-events-none"}`}
             style={computeTooltipPos(tooltipX, tooltipY)}
             onMouseEnter={cancelHide}
             onMouseLeave={scheduleHide}
