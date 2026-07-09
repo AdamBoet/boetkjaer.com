@@ -36,14 +36,16 @@ export default function Sidebar() {
       })}
 
       <div className="mt-auto flex items-center gap-2">
-        <Link
-          href="/api/lab-logout"
-          title="Log out"
-          className="flex-1 flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-        >
-          <span className="text-base w-5 text-center">⏻</span>
-          Logout
-        </Link>
+        <form action="/api/lab-logout" method="POST" className="flex-1">
+          <button
+            type="submit"
+            title="Log out"
+            className="w-full flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+          >
+            <span className="text-base w-5 text-center">⏻</span>
+            Logout
+          </button>
+        </form>
         <ThemeToggle />
       </div>
     </aside>

@@ -87,7 +87,13 @@
       "Bash(curl -s -b /tmp/c.txt -I http://localhost:3000/api/lab-logout)",
       "Bash(curl -s -b /tmp/c.txt -o /dev/null -w \"%{http_code} -> \" http://localhost:3000/lab)",
       "Bash(curl -s -b /tmp/c.txt -I http://localhost:3000/lab)",
-      "Bash(mkdir -p \"/Users/adam/Dokumenter/Documents/Claude projects/Bøtkjær.com/public\" *)"
+      "Bash(mkdir -p \"/Users/adam/Dokumenter/Documents/Claude projects/Bøtkjær.com/public\" *)",
+      "Bash(curl -s -k -o /dev/null -w \"%{http_code}\\\\n\" https://boetkjaer.com/adam-headshot.png)",
+      "Bash(curl -s -k -c /tmp/prod2.txt -o /dev/null -w \"%{http_code}\\\\n\" -X POST https://boetkjaer.com/api/lab-login -H \"Content-Type: application/json\" -d '{\"username\":\"adam\",\"password\":\"branco\"}')",
+      "Bash(curl -s -k -b /tmp/prod2.txt -o /dev/null -w \"%{http_code}\\\\n\" https://boetkjaer.com/lab)",
+      "Bash(curl -s -k -b /tmp/prod2.txt -o /dev/null -w \"%{http_code}\\\\n\" https://boetkjaer.com/lab/hanzi)",
+      "Bash(curl -s -k -b /tmp/prod2.txt -I https://boetkjaer.com/lab/hanzi)",
+      "Bash(node repro.mjs)"
     ],
     "additionalDirectories": [
       "/Users/adam/Dokumenter/Documents/Andet/billeder"
