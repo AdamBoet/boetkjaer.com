@@ -5,6 +5,11 @@ import Providers from "./providers";
 export const metadata: Metadata = {
   title: "Adam Bøtkjær",
   description: "Digital CV",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Adam Bøtkjær",
+  },
 };
 
 export default function RootLayout({
