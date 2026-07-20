@@ -22,10 +22,13 @@ export default async function Overview() {
 
   const stats = statsRow ?? staticStats;
   const cards = (cardsRows?.length ? cardsRows : staticCards) as HanziCard[];
-  const net = (economyTransactions ?? []).reduce(
-    (s, t) => s + (t.type === "income" ? t.amount : -t.amount),
-    0
-  );
+  const totalSpending = (economyTransactions ?? [])
+    .filter(t => t.type === "expense")
+    .reduce((s, t) => s + t.amount, 0);
+  const totalEarnings = (economyTransactions ?? [])
+    .filter(t => t.type === "income")
+    .reduce((s, t) => s + t.amount, 0);
+  const net = totalEarnings - totalSpending;
 
   const { learnedCount, year, dayOfYear, daysInYear } = stats;
   const goalPct = Math.round(Math.min(learnedCount / YEARLY_GOAL, 1) * 100);
@@ -128,6 +131,16 @@ export default async function Overview() {
         <p className={`text-4xl font-bold ${net < 0 ? "text-red-500 dark:text-red-400" : "text-emerald-700 dark:text-emerald-500"}`}>
           {numberFormat.format(net)} kr
         </p>
+        <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800 space-y-1.5">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-zinc-500 dark:text-zinc-400">Total earnings</span>
+            <span className="font-medium tabular-nums text-emerald-700 dark:text-emerald-500">{numberFormat.format(totalEarnings)} kr</span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-zinc-500 dark:text-zinc-400">Total spending</span>
+            <span className="font-medium tabular-nums text-red-500 dark:text-red-400">{numberFormat.format(totalSpending)} kr</span>
+          </div>
+        </div>
       </Link>
     </div>
   );
