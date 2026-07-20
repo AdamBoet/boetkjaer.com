@@ -11,14 +11,21 @@ export const dynamic = "force-dynamic";
 const YEARLY_GOAL = 1500;
 const CARDS_PER_DAY = 5;
 
+const numberFormat = new Intl.NumberFormat("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 export default async function Overview() {
-  const [{ data: statsRow }, { data: cardsRows }] = await Promise.all([
+  const [{ data: statsRow }, { data: cardsRows }, { data: economyTransactions }] = await Promise.all([
     supabase.from("anki_stats").select("*").eq("id", 1).single(),
     supabase.from("hanzi_cards").select("*").order("rank"),
+    supabase.from("economy_transactions").select("type, amount"),
   ]);
 
   const stats = statsRow ?? staticStats;
   const cards = (cardsRows?.length ? cardsRows : staticCards) as HanziCard[];
+  const net = (economyTransactions ?? []).reduce(
+    (s, t) => s + (t.type === "income" ? t.amount : -t.amount),
+    0
+  );
 
   const { learnedCount, year, dayOfYear, daysInYear } = stats;
   const goalPct = Math.round(Math.min(learnedCount / YEARLY_GOAL, 1) * 100);
@@ -108,6 +115,20 @@ export default async function Overview() {
           </div>
         )}
       </div>
+
+      <Link
+        href="/lab/economy"
+        className="group block rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-6"
+      >
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-sm font-medium text-zinc-600 dark:text-zinc-300">Economy</span>
+          <span className="text-xs text-zinc-400 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-400 transition-colors">View →</span>
+        </div>
+        <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">Net</p>
+        <p className={`text-4xl font-bold ${net < 0 ? "text-red-500 dark:text-red-400" : "text-emerald-700 dark:text-emerald-500"}`}>
+          {numberFormat.format(net)} kr
+        </p>
+      </Link>
     </div>
   );
 }
