@@ -128,7 +128,7 @@ export default async function Overview() {
           <span className="text-xs text-zinc-400 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-400 transition-colors">View →</span>
         </div>
         <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">Net</p>
-        <p className={`text-4xl font-bold ${net < 0 ? "text-red-500 dark:text-red-400" : "text-emerald-700 dark:text-emerald-500"}`}>
+        <p className={`text-4xl font-bold text-center ${net < 0 ? "text-red-500 dark:text-red-400" : "text-emerald-700 dark:text-emerald-500"}`}>
           {numberFormat.format(net)} kr
         </p>
         <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800 space-y-1.5">
