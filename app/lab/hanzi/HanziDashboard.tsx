@@ -6,6 +6,7 @@ import CharacterGrid, { LegendSwatches, tileStyle, type HanziCard } from "./Char
 import { cardDueDiff } from "./card-utils";
 import HardCardsRow from "./HardCardsRow";
 import FormulaInfo from "./FormulaInfo";
+import WritingPractice from "./WritingPractice";
 
 const YEARLY_GOAL = 1500;
 const CARDS_PER_DAY = 5;
@@ -55,6 +56,7 @@ export default function HanziDashboard({
   const settingsRef = useRef<HTMLDivElement>(null);
   const masteryInfoRef = useRef<HTMLDivElement>(null);
   const [masteryInfoOpen, setMasteryInfoOpen] = useState(false);
+  const [tab, setTab] = useState<"dashboard" | "practice">("dashboard");
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
 
@@ -337,6 +339,27 @@ export default function HanziDashboard({
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-800">
+        {(["dashboard", "practice"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              tab === t
+                ? "border-zinc-800 dark:border-zinc-200 text-zinc-900 dark:text-zinc-100"
+                : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+            }`}
+          >
+            {t === "dashboard" ? "Dashboard" : "Practice writing"}
+          </button>
+        ))}
+      </div>
+
+      {tab === "practice" && <WritingPractice cards={cards} />}
+
+      {tab === "dashboard" && (
+      <>
       {/* Combined progress + skip budget + mastery */}
       <div className="flex flex-col sm:flex-row gap-4 items-stretch">
 
@@ -455,6 +478,8 @@ export default function HanziDashboard({
       </div>
 
       <p className="text-xs text-zinc-400 dark:text-zinc-600 text-center">Updated {updatedStr}</p>
+      </>
+      )}
     </div>
   );
 }

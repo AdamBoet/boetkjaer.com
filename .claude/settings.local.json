@@ -93,10 +93,31 @@
       "Bash(curl -s -k -b /tmp/prod2.txt -o /dev/null -w \"%{http_code}\\\\n\" https://boetkjaer.com/lab)",
       "Bash(curl -s -k -b /tmp/prod2.txt -o /dev/null -w \"%{http_code}\\\\n\" https://boetkjaer.com/lab/hanzi)",
       "Bash(curl -s -k -b /tmp/prod2.txt -I https://boetkjaer.com/lab/hanzi)",
-      "Bash(node repro.mjs)"
+      "Bash(node repro.mjs)",
+      "Bash(mkdir -p \"/Users/adam/Dokumenter/Documents/Claude projects/Bøtkjær.com/app/api/economy/transactions/[id]\" \"/Users/adam/Dokumenter/Documents/Claude projects/Bøtkjær.com/app/api/economy/recurring/[id]\" \"/Users/adam/Dokumenter/Documents/Claude projects/Bøtkjær.com/app/lab/economy\")",
+      "Bash(lsof -ti:3001)",
+      "Bash(xargs -r kill)",
+      "Bash(curl -s -o /dev/null -w \"port 3000: %{http_code}\\\\n\" http://localhost:3000/lab/economy)",
+      "Bash(awk -F'=' '/^NEXT_PUBLIC_SUPABASE_URL=/{print length\\($0\\)-length\\($1\\)-1}' .env.local)",
+      "Bash(grep -c '^NEXT_PUBLIC_SUPABASE_URL=\"\"$' .env.local)",
+      "Bash(openssl rand *)",
+      "Bash(vercel integration *)",
+      "Bash(curl -s -b /tmp/econ-cookies.txt -X POST http://localhost:3000/api/economy/transactions -H \"Content-Type: application/json\" -d '{\"description\":\"Test entry\",\"amount\":42,\"type\":\"expense\",\"occurred_on\":\"2026-07-09\"}' -w \"\\\\nstatus: %{http_code}\\\\n\")",
+      "Bash(curl -s -b /tmp/econ-cookies.txt -X POST http://localhost:3000/api/economy/recurring -H \"Content-Type: application/json\" -d '{\"name\":\"netflix\",\"amount\":84.5,\"type\":\"expense\"}' -w \"\\\\nstatus: %{http_code}\\\\n\")",
+      "Bash(curl -s -b /tmp/econ-cookies.txt -X POST http://localhost:3000/api/economy/recurring -H \"Content-Type: application/json\" -d '{\"name\":\"salary\",\"amount\":5000,\"type\":\"income\"}' -w \"\\\\nstatus: %{http_code}\\\\n\")",
+      "Bash(curl -s -b /tmp/econ-cookies.txt -X PATCH http://localhost:3000/api/economy/recurring/1 -H \"Content-Type: application/json\" -d '{\"name\":\"netflix\",\"amount\":99}' -w \"\\\\nstatus: %{http_code}\\\\n\")",
+      "Bash(curl -s -b /tmp/econ-cookies.txt -X DELETE http://localhost:3000/api/economy/recurring/2 -w \"\\\\nstatus: %{http_code}\\\\n\")",
+      "Bash(curl -s -b /tmp/econ-cookies.txt -X DELETE http://localhost:3000/api/economy/transactions/1 -w \"\\\\nstatus: %{http_code}\\\\n\")",
+      "Bash(curl -s -b /tmp/econ-cookies.txt http://localhost:3000/lab/economy -o /tmp/econ-page2.html -w \"status: %{http_code}\\\\n\")",
+      "Bash(curl -s -o /dev/null -w \"no-cookie POST: %{http_code}\\\\n\" -X POST http://localhost:3000/api/economy/transactions -H \"Content-Type: application/json\" -d '{\"description\":\"x\",\"amount\":1,\"type\":\"expense\",\"occurred_on\":\"2026-07-09\"}')",
+      "Bash(curl -s -o /dev/null -w \"server check: %{http_code}\\\\n\" http://localhost:3000/lab/economy -b /tmp/econ-cookies.txt)",
+      "Bash(curl -s -b /tmp/econ-cookies.txt http://localhost:3000/lab/economy)",
+      "Bash(curl -s -b /tmp/econ-cookies.txt -X DELETE http://localhost:3000/api/economy/recurring/1 -w \"\\\\nstatus: %{http_code}\\\\n\")",
+      "Bash(sips -g pixelWidth -g pixelHeight \"/Users/adam/Downloads/BØT.png\")"
     ],
     "additionalDirectories": [
-      "/Users/adam/Dokumenter/Documents/Andet/billeder"
+      "/Users/adam/Dokumenter/Documents/Andet/billeder",
+      "/Users/adam/Dokumenter/Documents/Claude projects/Bøtkjær.com/app/api/economy/transactions"
     ]
   }
 }
