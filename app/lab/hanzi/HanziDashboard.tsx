@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useTheme } from "next-themes";
-import CharacterGrid, { LegendSwatches, tileStyle, type HanziCard } from "./CharacterGrid";
+import CharacterGrid, { LegendSwatches, type HanziCard } from "./CharacterGrid";
 import { cardDueDiff } from "./card-utils";
-import HardCardsRow from "./HardCardsRow";
 import FormulaInfo from "./FormulaInfo";
 import WritingPractice from "./WritingPractice";
+import Hsk3Grid, { type Hsk3Coverage } from "./Hsk3Grid";
+import MandarinOverview from "./MandarinOverview";
 
 const YEARLY_GOAL = 1500;
 const CARDS_PER_DAY = 5;
@@ -41,9 +42,11 @@ type Stats = {
 export default function HanziDashboard({
   initialStats,
   initialCards,
+  hsk3Coverage,
 }: {
   initialStats: Stats;
   initialCards: HanziCard[];
+  hsk3Coverage: Hsk3Coverage;
 }) {
   const [stats, setStats] = useState(initialStats);
   const [cards, setCards] = useState(initialCards);
@@ -54,9 +57,7 @@ export default function HanziDashboard({
   const [ankiUrl, setAnkiUrl] = useState("http://localhost:8765");
   const [deckName, setDeckName] = useState("Mandarin::汉字 writing");
   const settingsRef = useRef<HTMLDivElement>(null);
-  const masteryInfoRef = useRef<HTMLDivElement>(null);
-  const [masteryInfoOpen, setMasteryInfoOpen] = useState(false);
-  const [tab, setTab] = useState<"dashboard" | "practice">("dashboard");
+  const [tab, setTab] = useState<"dashboard" | "hanzi" | "hsk3" | "practice">("dashboard");
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
 
@@ -83,16 +84,6 @@ export default function HanziDashboard({
     if (showSettings) document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showSettings]);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (masteryInfoRef.current && !masteryInfoRef.current.contains(e.target as Node)) {
-        setMasteryInfoOpen(false);
-      }
-    }
-    if (masteryInfoOpen) document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [masteryInfoOpen]);
 
   function saveSettings(url: string) {
     localStorage.setItem("ankiUrl", url);
@@ -222,26 +213,6 @@ export default function HanziDashboard({
 
   const { learnedCount, updatedAt, year, dayOfYear, daysInYear } = stats;
 
-  const goalPct = Math.round(Math.min(learnedCount / YEARLY_GOAL, 1) * 100);
-  const remaining = Math.max(YEARLY_GOAL - learnedCount, 0);
-  const yearPct = Math.round((dayOfYear / daysInYear) * 100);
-  const paceDelta = goalPct - yearPct;
-
-  const expectedByNow = dayOfYear * CARDS_PER_DAY;
-  const cardDelta = learnedCount - expectedByNow;
-  const daysDelta = Math.round(Math.abs(cardDelta) / CARDS_PER_DAY);
-
-  const daysLeftInYear = daysInYear - dayOfYear;
-  const daysNeeded = Math.ceil(remaining / CARDS_PER_DAY);
-  const daysCanSkip = Math.max(0, daysLeftInYear - daysNeeded);
-  const daysToCatchup = Math.max(
-    0,
-    Math.ceil(
-      (YEARLY_GOAL * dayOfYear - daysInYear * learnedCount) /
-        (CARDS_PER_DAY * daysInYear - YEARLY_GOAL)
-    )
-  );
-
   const updatedStr = new Date(updatedAt).toLocaleString("en-GB", {
     day: "numeric",
     month: "short",
@@ -268,8 +239,6 @@ export default function HanziDashboard({
     scoreMap.set(c.note_id, scoredCards.length > 1 ? i / (scoredCards.length - 1) : 0.5);
   });
 
-  const hardCards = [...scoredCards].reverse().slice(0, 15).map((c) => ({ ...c, score: c.raw }));
-
   const comingDueCards = [...scoredCards]
     .reverse()
     .filter((c) => { const d = cardDueDiff(c); return d !== null && d >= 0 && d <= 3; })
@@ -278,15 +247,11 @@ export default function HanziDashboard({
 
   const hasScores = scoreMap.size > 0;
 
-  const masteryScore = scoredCards.length === 0 ? 0 : Math.round(
-    (1 - scoredCards.reduce((sum, c) => sum + c.raw, 0) / scoredCards.length) * 100
-  );
-
   return (
     <div className="max-w-4xl space-y-8">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Anki 汉字 Progress</h1>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Mandarin Progress</h1>
           <p className="mt-1 text-sm text-zinc-500">Updated {updatedStr}</p>
         </div>
         <div className="flex flex-col items-end gap-1">
@@ -341,7 +306,7 @@ export default function HanziDashboard({
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-800">
-        {(["dashboard", "practice"] as const).map((t) => (
+        {(["dashboard", "hanzi", "hsk3", "practice"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -351,118 +316,31 @@ export default function HanziDashboard({
                 : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
             }`}
           >
-            {t === "dashboard" ? "Dashboard" : "Practice writing"}
+            {t === "dashboard"
+              ? "Dashboard"
+              : t === "hanzi"
+              ? "Hanzi"
+              : t === "hsk3"
+              ? "HSK 3.0"
+              : "Practice writing"}
           </button>
         ))}
       </div>
 
+      {tab === "dashboard" && (
+        <MandarinOverview cards={cards} stats={stats} hsk3Coverage={hsk3Coverage} isDark={isDark} />
+      )}
+
       {tab === "practice" && <WritingPractice cards={cards} />}
 
-      {tab === "dashboard" && (
-      <>
-      {/* Combined progress + skip budget + mastery */}
-      <div className="flex flex-col sm:flex-row gap-4 items-stretch">
-
-        <div className="flex-1 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-6">
-
-            {/* Progress */}
-            <div className="flex-1 space-y-4 text-center">
-              <div className="flex items-end justify-center gap-1">
-                <span className="text-4xl sm:text-5xl font-bold tabular-nums">{learnedCount.toLocaleString()}</span>
-                <span className="pb-0.5 text-zinc-400 dark:text-zinc-500 text-xs">/ {YEARLY_GOAL.toLocaleString()}</span>
-              </div>
-              <div className="space-y-1.5">
-                <div className="h-4 w-full rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden relative">
-                  <div
-                    className="absolute inset-y-0 left-0 bg-red-400"
-                    style={{ width: `${yearPct}%`, backgroundImage: "repeating-linear-gradient(-45deg, transparent, transparent 5px, rgba(255,255,255,0.3) 5px, rgba(255,255,255,0.3) 10px)" }}
-                  />
-                  <div
-                    className="absolute inset-y-0 left-0 bg-emerald-700"
-                    style={{ width: `${goalPct}%`, backgroundImage: "repeating-linear-gradient(-45deg, transparent, transparent 5px, rgba(255,255,255,0.3) 5px, rgba(255,255,255,0.3) 10px)" }}
-                  />
-                </div>
-                <div className="flex items-center justify-center gap-3 text-xs">
-                  <span className="text-emerald-700 dark:text-emerald-600 font-medium">{goalPct}%</span>
-                  <span className="text-zinc-400 dark:text-zinc-500 font-medium">{yearPct}% year</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Divider */}
-            <div className="hidden sm:block w-px self-stretch bg-zinc-100 dark:bg-zinc-800" />
-            <div className="block sm:hidden h-px w-full bg-zinc-100 dark:bg-zinc-800" />
-
-            {/* Skip budget */}
-            <div className="flex flex-col items-center sm:items-start justify-center gap-2 text-sm sm:min-w-52 text-center sm:text-left">
-              <p>
-                <span className={`font-bold ${cardDelta < 0 ? "text-red-500" : ""}`}>{daysDelta} days</span>
-                {" skipped"}
-              </p>
-              <p className="text-zinc-500 dark:text-zinc-400">
-                {"skip no more than "}
-                <span className={`font-bold ${daysCanSkip <= 0 ? "text-red-500" : "text-zinc-700 dark:text-zinc-200"}`}>{daysCanSkip} days</span>
-              </p>
-              <p className="text-zinc-500 dark:text-zinc-400">
-                {daysToCatchup > 0 ? (
-                  <>
-                    {"stay consistent for "}
-                    <span className="font-bold text-amber-500">{daysToCatchup} days</span>
-                    {" to catch up"}
-                  </>
-                ) : (
-                  <>you&apos;re on pace</>
-                )}
-              </p>
-            </div>
-
-          </div>
-        </div>
-
-        {/* Mastery widget */}
-        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-5 flex flex-row sm:flex-col items-center justify-center gap-4 sm:gap-2 sm:min-w-[130px]">
-          <div
-            className="w-10 h-10 rounded-lg border"
-            style={tileStyle(1 - masteryScore / 100, isDark)}
-          />
-          <span className="text-2xl font-bold tabular-nums">{masteryScore}%</span>
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-zinc-500">Mastery</span>
-            <div className="relative" ref={masteryInfoRef}>
-              <button
-                onClick={() => setMasteryInfoOpen((v) => !v)}
-                className="text-zinc-600 hover:text-zinc-400 transition-colors text-sm leading-none"
-                aria-label="Show mastery info"
-              >
-                ⓘ
-              </button>
-              {masteryInfoOpen && (
-                <div className="absolute bottom-full right-0 mb-2 w-52 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl p-3 text-xs text-zinc-600 dark:text-zinc-300 z-20 space-y-1.5">
-                  <p className="font-semibold text-zinc-800 dark:text-zinc-100">How mastery is calculated</p>
-                  <p>1 − average difficulty score across all reviewed cards.</p>
-                  <p className="text-zinc-400 dark:text-zinc-500">Uses the same formula as the card colours: forget rate, lapse count, and interval length.</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-      </div>
-
-      {/* Hardest cards */}
-      {hardCards.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">Hardest to remember</h2>
-          <div className="sm:hidden">
-            <HardCardsRow cards={hardCards.slice(0, 5)} scoreMap={scoreMap} columns={5} />
-          </div>
-          <div className="hidden sm:block">
-            <HardCardsRow cards={hardCards} scoreMap={scoreMap} columns={15} />
-          </div>
+      {tab === "hsk3" && (
+        <div className="space-y-4">
+          <Hsk3Grid coverage={hsk3Coverage} isDark={isDark} />
         </div>
       )}
 
+      {tab === "hanzi" && (
+      <>
       {/* Character grid */}
       <div className="space-y-4">
         <div className="flex items-center justify-between flex-wrap gap-3">

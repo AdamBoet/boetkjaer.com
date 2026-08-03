@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "sync-stats": "node scripts/sync-stats.mjs"
+    "sync-stats": "node scripts/sync-stats.mjs",
+    "sync-hsk3": "node scripts/sync-hsk3.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.0",
