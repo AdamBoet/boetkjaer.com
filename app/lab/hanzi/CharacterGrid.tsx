@@ -18,6 +18,7 @@ export interface HanziCard {
   queue?: number;
   due?: number;
   type?: number;
+  learning_step?: number | null;
   mod?: number | null;
 }
 

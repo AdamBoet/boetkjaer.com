@@ -2,12 +2,12 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useTheme } from "next-themes";
-import CharacterGrid, { LegendSwatches, type HanziCard } from "./CharacterGrid";
-import { cardDueDiff } from "./card-utils";
-import FormulaInfo from "./FormulaInfo";
+import { type HanziCard } from "./CharacterGrid";
 import WritingPractice from "./WritingPractice";
 import Hsk3Grid, { type Hsk3Coverage } from "./Hsk3Grid";
 import MandarinOverview from "./MandarinOverview";
+import FlashcardTab, { type WordPhrase } from "./FlashcardTab";
+import HanziTab from "./HanziTab";
 
 const YEARLY_GOAL = 1500;
 const CARDS_PER_DAY = 5;
@@ -24,7 +24,7 @@ async function ankiConnect(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(8000),
+    signal: AbortSignal.timeout(30000),
   });
   const data = await res.json();
   if (data.error) throw new Error(data.error);
@@ -42,14 +42,17 @@ type Stats = {
 export default function HanziDashboard({
   initialStats,
   initialCards,
-  hsk3Coverage,
+  hsk3Coverage: initialHsk3Coverage,
+  wordsPhrases,
 }: {
   initialStats: Stats;
   initialCards: HanziCard[];
   hsk3Coverage: Hsk3Coverage;
+  wordsPhrases: WordPhrase[];
 }) {
   const [stats, setStats] = useState(initialStats);
   const [cards, setCards] = useState(initialCards);
+  const [hsk3Coverage, setHsk3Coverage] = useState(initialHsk3Coverage);
   const [loading, setLoading] = useState(false);
   const [synced, setSynced] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +60,7 @@ export default function HanziDashboard({
   const [ankiUrl, setAnkiUrl] = useState("http://localhost:8765");
   const [deckName, setDeckName] = useState("Mandarin::汉字 writing");
   const settingsRef = useRef<HTMLDivElement>(null);
-  const [tab, setTab] = useState<"dashboard" | "hanzi" | "hsk3" | "practice">("dashboard");
+  const [tab, setTab] = useState<"dashboard" | "flashcards" | "hanzi" | "hsk3" | "practice">("dashboard");
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
 
@@ -137,30 +140,34 @@ export default function HanziDashboard({
       }
 
       const cardInfoById = Object.fromEntries(allCardInfo.map((c) => [c.cardId, c]));
-      const reviewStats: Record<number, Partial<HanziCard>> = {};
-      for (const note of allNotes) {
-        const cardId = note.cards?.[0];
-        if (!cardId) continue;
-        const info = cardInfoById[cardId];
-        if (!info) continue;
-        reviewStats[note.noteId] = {
-          card_id: cardId,
-          interval: info.interval,
-          reps: info.reps,
-          lapses: info.lapses,
-          factor: info.factor,
-          queue: info.queue,
-          due: info.due,
-          type: info.type,
-          mod: info.mod ?? null,
-        };
-      }
 
-      // Merge: update existing cards + add new ones from Anki fields
-      const existingByNoteId = Object.fromEntries(initialCards.map((c) => [c.note_id, c]));
+      // Merge: update existing cards + add new ones from Anki fields. Only
+      // let Anki's fetched stats win if they're actually newer than what we
+      // already have (`mod` timestamp) — otherwise a grade recorded here on
+      // the website (which Anki doesn't know about yet) would get silently
+      // overwritten by Anki's older snapshot on the next refresh. This only
+      // matters while both Anki and this site are being used in parallel.
+      const existingByNoteId = Object.fromEntries(cards.map((c) => [c.note_id, c]));
       const updatedCards: HanziCard[] = allNotes.map((note) => {
         const existing = existingByNoteId[note.noteId];
-        if (existing) return { ...existing, ...(reviewStats[note.noteId] ?? {}) };
+        const cardId = note.cards?.[0];
+        const info = cardId ? cardInfoById[cardId] : undefined;
+        const incomingIsNewer = !existing?.mod || !info?.mod || info.mod >= existing.mod;
+        const stats: Partial<HanziCard> =
+          info && incomingIsNewer
+            ? {
+                card_id: cardId,
+                interval: info.interval,
+                reps: info.reps,
+                lapses: info.lapses,
+                factor: info.factor,
+                queue: info.queue,
+                due: info.due,
+                type: info.type,
+                mod: info.mod ?? null,
+              }
+            : {};
+        if (existing) return { ...existing, ...stats };
         const rankTag = note.tags.find((t) => /^\d+$/.test(t));
         return {
           character: note.fields["Character"]?.value ?? "",
@@ -168,7 +175,7 @@ export default function HanziDashboard({
           pronunciation: note.fields["Pronunciation"]?.value ?? "",
           front: note.fields["Front"]?.value ?? "",
           note_id: note.noteId,
-          ...(reviewStats[note.noteId] ?? {}),
+          ...stats,
         };
       });
       updatedCards.sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
@@ -192,6 +199,88 @@ export default function HanziDashboard({
       if (!saveRes.ok) {
         const { error } = await saveRes.json();
         throw new Error(`Saved locally but failed to sync to database: ${error}`);
+      }
+
+      // Also refresh the HSK 3.0 vocabulary coverage from the same Anki instance.
+      const hsk3NoteIds: number[] = await ankiConnect(
+        "findNotes",
+        { query: 'deck:"Mandarin::HSK 1-6 vocabulary"' },
+        effectiveUrl
+      );
+      if (hsk3NoteIds.length > 0) {
+        const hsk3Notes: NoteInfo[] = [];
+        for (let i = 0; i < hsk3NoteIds.length; i += 600) {
+          const batch = await ankiConnect("notesInfo", { notes: hsk3NoteIds.slice(i, i + 600) }, effectiveUrl);
+          hsk3Notes.push(...(Array.isArray(batch) ? batch.filter(Boolean) : []));
+        }
+        const hsk3CardIds = hsk3Notes.map((n) => n.cards?.[0]).filter((id): id is number => !!id);
+        const hsk3CardInfo: {
+          cardId: number; interval: number; reps: number; lapses: number;
+          factor: number; queue: number; due: number; type: number; mod?: number;
+        }[] = [];
+        for (let i = 0; i < hsk3CardIds.length; i += 600) {
+          const batch = await ankiConnect("cardsInfo", { cards: hsk3CardIds.slice(i, i + 600) }, effectiveUrl);
+          hsk3CardInfo.push(...batch);
+        }
+        const hsk3CardInfoById = Object.fromEntries(hsk3CardInfo.map((c) => [c.cardId, c]));
+
+        const byWord = new Map<string, Partial<import("./Hsk3Grid").Hsk3Word>>();
+        for (const n of hsk3Notes) {
+          const word = n.fields["Simplified"]?.value?.trim();
+          if (!word || byWord.has(word)) continue;
+          const cardId = n.cards?.[0];
+          const info = cardId ? hsk3CardInfoById[cardId] : null;
+          byWord.set(word, {
+            note_id: n.noteId,
+            card_id: cardId ?? undefined,
+            interval: info?.interval,
+            reps: info?.reps,
+            lapses: info?.lapses,
+            factor: info?.factor,
+            queue: info?.queue,
+            due: info?.due,
+            type: info?.type,
+            mod: info?.mod ?? null,
+          });
+        }
+
+        const updatedLevels: Hsk3Coverage["levels"] = {};
+        const hsk3Summary: Hsk3Coverage["summary"] = {};
+        for (const [levelKey, words] of Object.entries(hsk3Coverage.levels)) {
+          updatedLevels[levelKey] = words.map((w) => {
+            const r = byWord.get(w.word);
+            const { word, pinyin, meaning } = w;
+            return r ? { word, pinyin, meaning, known: true, ...r } : { word, pinyin, meaning, known: false };
+          });
+          const knownCount = updatedLevels[levelKey].filter((w) => w.known).length;
+          hsk3Summary[levelKey] = { total: words.length, known: knownCount };
+        }
+        const deckLearned = [...byWord.values()].filter((r) => (r.reps ?? 0) > 0).length;
+        const deck = { total: byWord.size, learned: deckLearned };
+        const hsk3UpdatedAt = new Date().toISOString();
+        const newHsk3Coverage: Hsk3Coverage = { levels: updatedLevels, summary: hsk3Summary, deck, updatedAt: hsk3UpdatedAt };
+        setHsk3Coverage(newHsk3Coverage);
+
+        // Only known words carry review stats that can actually change between
+        // refreshes — the ~5,900 words never in the deck stay known:false
+        // forever, so skip re-uploading them every time. (If a word is ever
+        // removed from the deck, its row goes stale until the next full
+        // `npm run sync-hsk3`, which re-seeds everything from scratch.)
+        const hsk3Words = Object.entries(updatedLevels)
+          .flatMap(([lvl, ws]) => ws.map((w) => ({ ...w, level: lvl })))
+          .filter((w) => w.known);
+        const hsk3SaveRes = await fetch("/api/hsk3-sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            stats: { deck_total: deck.total, deck_learned: deck.learned, updated_at: hsk3UpdatedAt },
+            words: hsk3Words,
+          }),
+        });
+        if (!hsk3SaveRes.ok) {
+          const { error } = await hsk3SaveRes.json();
+          throw new Error(`Saved locally but failed to sync HSK vocabulary to database: ${error}`);
+        }
       }
 
       setSynced(true);
@@ -221,34 +310,8 @@ export default function HanziDashboard({
     minute: "2-digit",
   });
 
-  const maxLapses = Math.max(...cards.filter((c) => c.lapses != null).map((c) => c.lapses!), 1);
-
-  const scoredCards = cards
-    .filter((c) => (c.reps ?? 0) > 0 && c.interval != null && c.lapses != null)
-    .map((c) => {
-      const lapseRate = c.lapses! / Math.max(c.reps!, 1);
-      const lapseAbsolute = c.lapses! / maxLapses;
-      const intervalDiff = 1 - Math.min(c.interval!, 90) / 90;
-      const raw = lapseRate * 0.45 + lapseAbsolute * 0.2 + intervalDiff * 0.35;
-      return { ...c, raw };
-    })
-    .sort((a, b) => a.raw - b.raw);
-
-  const scoreMap = new Map<number, number>();
-  scoredCards.forEach((c, i) => {
-    scoreMap.set(c.note_id, scoredCards.length > 1 ? i / (scoredCards.length - 1) : 0.5);
-  });
-
-  const comingDueCards = [...scoredCards]
-    .reverse()
-    .filter((c) => { const d = cardDueDiff(c); return d !== null && d >= 0 && d <= 3; })
-    .slice(0, 15)
-    .map((c) => ({ ...c, score: c.raw }));
-
-  const hasScores = scoreMap.size > 0;
-
   return (
-    <div className="max-w-4xl space-y-8">
+    <div className="w-full space-y-8">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Mandarin Progress</h1>
@@ -306,7 +369,7 @@ export default function HanziDashboard({
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-800">
-        {(["dashboard", "hanzi", "hsk3", "practice"] as const).map((t) => (
+        {(["dashboard", "flashcards", "hanzi", "hsk3", "practice"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -318,6 +381,8 @@ export default function HanziDashboard({
           >
             {t === "dashboard"
               ? "Dashboard"
+              : t === "flashcards"
+              ? "Flashcards"
               : t === "hanzi"
               ? "Hanzi"
               : t === "hsk3"
@@ -331,6 +396,8 @@ export default function HanziDashboard({
         <MandarinOverview cards={cards} stats={stats} hsk3Coverage={hsk3Coverage} isDark={isDark} />
       )}
 
+      {tab === "flashcards" && <FlashcardTab cards={cards} hsk3Coverage={hsk3Coverage} wordsPhrases={wordsPhrases} />}
+
       {tab === "practice" && <WritingPractice cards={cards} />}
 
       {tab === "hsk3" && (
@@ -339,25 +406,7 @@ export default function HanziDashboard({
         </div>
       )}
 
-      {tab === "hanzi" && (
-      <>
-      {/* Character grid */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <h2 className="text-sm font-semibold text-zinc-500 dark:text-zinc-400">All {learnedCount} characters</h2>
-          {hasScores && (
-            <div className="flex items-center gap-3 text-xs text-zinc-500">
-              <LegendSwatches />
-              <FormulaInfo />
-            </div>
-          )}
-        </div>
-        <CharacterGrid cards={cards} scoreMap={hasScores ? scoreMap : undefined} />
-      </div>
-
-      <p className="text-xs text-zinc-400 dark:text-zinc-600 text-center">Updated {updatedStr}</p>
-      </>
-      )}
+      {tab === "hanzi" && <HanziTab cards={cards} hsk3Coverage={hsk3Coverage} stats={stats} isDark={isDark} />}
     </div>
   );
 }

@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "sync-stats": "node scripts/sync-stats.mjs",
-    "sync-hsk3": "node scripts/sync-hsk3.mjs"
+    "sync-hsk3": "node scripts/sync-hsk3.mjs",
+    "sync-words-phrases": "node scripts/sync-words-phrases.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.0",

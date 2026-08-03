@@ -1,0 +1,924 @@
+"use client";
+
+import { useMemo, useRef, useState, useEffect } from "react";
+import { type HanziCard } from "./CharacterGrid";
+import { cardDueDiff } from "./card-utils";
+import { type Hsk3Coverage, type Hsk3Word } from "./Hsk3Grid";
+
+export interface WordPhrase {
+  note_id: number;
+  source: "random_words" | "idioms";
+  word: string;
+  pinyin: string | null;
+  meaning: string | null;
+  interval?: number;
+  reps?: number;
+  lapses?: number;
+  factor?: number;
+  queue?: number;
+  due?: number;
+  type?: number;
+  learning_step?: number | null;
+  mod?: number | null;
+}
+
+type DeckKey = "hanzi" | "hsk3" | "wp";
+type AnyCard = HanziCard | Hsk3Word | WordPhrase;
+
+const DECK_LABELS: Record<DeckKey, string> = {
+  hanzi: "汉字 writing",
+  hsk3: "HSK 1-6 vocabulary",
+  wp: "Words and phrases",
+};
+
+const DEFAULT_MAX_REVIEWS = 9999;
+const DEFAULT_NEW_CARDS = 5;
+
+function maxReviewsKey(deck: DeckKey) {
+  return `flashcard_max_reviews_${deck}`;
+}
+
+function newCardsKey(deck: DeckKey) {
+  return `flashcard_new_cards_${deck}`;
+}
+
+function loadMaxReviews(deck: DeckKey): number {
+  if (typeof window === "undefined") return DEFAULT_MAX_REVIEWS;
+  const stored = localStorage.getItem(maxReviewsKey(deck));
+  const n = stored ? parseInt(stored, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_REVIEWS;
+}
+
+function loadNewCards(deck: DeckKey): number {
+  if (typeof window === "undefined") return DEFAULT_NEW_CARDS;
+  const stored = localStorage.getItem(newCardsKey(deck));
+  const n = stored ? parseInt(stored, 10) : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_NEW_CARDS;
+}
+
+interface DueCard {
+  id: string;
+  dbId: number | string; // note_id (hanzi) or word (hsk3) — the actual DB key
+  source: DeckKey;
+  front: string;
+  sub: string; // pinyin/pronunciation
+  back: string; // meaning/definition
+  dueDiff: number | null; // null for cards that have never been studied
+  isNew: boolean;
+  interval: number;
+  factor: number;
+  reps: number;
+  lapses: number;
+  type: number; // 0=new, 1=learning, 2=review, 3=relearning — Anki's own convention
+  learningStep: number | null; // index into LEARNING_STEPS_MIN/RELEARNING_STEPS_MIN
+  due: number | null; // epoch seconds; only meaningful while type is 1 or 3
+}
+
+type Grade = "again" | "hard" | "good" | "easy";
+
+const MIN_FACTOR = 1300;
+const DEFAULT_FACTOR = 2500;
+
+// Anki's actual default scheduling ("Basic" preset): new cards step through
+// 1m then 10m before graduating; a lapsed review card relearns via a single
+// 10m step; graduating lands you at 1 day, Easy skips straight to 4 days,
+// and a lapse's minimum post-relearn interval is 1 day (0% of the old one).
+const LEARNING_STEPS_MIN = [1, 10];
+const RELEARNING_STEPS_MIN = [10];
+const GRADUATE_INTERVAL_DAYS = 1;
+const EASY_INTERVAL_DAYS = 4;
+const LAPSE_MIN_INTERVAL_DAYS = 1;
+
+interface ScheduleResult {
+  interval: number; // days — only meaningful when dueInMin is null (graduated)
+  factor: number;
+  type: number;
+  learningStep: number | null;
+  dueInMin: number | null; // minutes from now; null means graduated to day-based scheduling
+}
+
+// Mirrors Anki's real per-card state machine rather than a flat SM-2 formula:
+// new/learning cards step through LEARNING_STEPS_MIN (Again restarts at
+// step 0, Hard shows the average of the current+next step, Good advances a
+// step or graduates on the last one, Easy always skips straight to the easy
+// interval); a review card that lapses (Again) drops into relearning via
+// RELEARNING_STEPS_MIN before returning to day-based review scheduling.
+function scheduleCard(
+  card: { interval: number; factor: number; reps: number; type: number; learningStep: number | null },
+  grade: Grade
+): ScheduleResult {
+  const { interval, factor, learningStep } = card;
+  const isNewCard = (card.reps ?? 0) === 0;
+  const isLearningPhase = !isNewCard && card.type === 1;
+  const isRelearningPhase = !isNewCard && card.type === 3;
+
+  if (isNewCard || isLearningPhase) {
+    const steps = LEARNING_STEPS_MIN;
+    const stepIndex = isLearningPhase ? learningStep ?? 0 : 0;
+    switch (grade) {
+      case "again":
+        return { interval: 0, factor, type: 1, learningStep: 0, dueInMin: steps[0] };
+      case "hard": {
+        const nextIdx = Math.min(stepIndex + 1, steps.length - 1);
+        const avgMin = (steps[stepIndex] + steps[nextIdx]) / 2;
+        return { interval: 0, factor: Math.max(MIN_FACTOR, factor - 150), type: 1, learningStep: stepIndex, dueInMin: avgMin };
+      }
+      case "good": {
+        const nextIdx = stepIndex + 1;
+        if (nextIdx >= steps.length) {
+          return { interval: GRADUATE_INTERVAL_DAYS, factor, type: 2, learningStep: null, dueInMin: null };
+        }
+        return { interval: 0, factor, type: 1, learningStep: nextIdx, dueInMin: steps[nextIdx] };
+      }
+      case "easy":
+        return { interval: EASY_INTERVAL_DAYS, factor: factor + 150, type: 2, learningStep: null, dueInMin: null };
+    }
+  }
+
+  if (isRelearningPhase) {
+    const steps = RELEARNING_STEPS_MIN;
+    const stepIndex = learningStep ?? 0;
+    switch (grade) {
+      case "again":
+        return { interval: 0, factor: Math.max(MIN_FACTOR, factor - 200), type: 3, learningStep: 0, dueInMin: steps[0] };
+      case "hard":
+        return { interval: 0, factor: Math.max(MIN_FACTOR, factor - 150), type: 3, learningStep: stepIndex, dueInMin: steps[stepIndex] * 1.5 };
+      case "good": {
+        const nextIdx = stepIndex + 1;
+        if (nextIdx >= steps.length) {
+          return { interval: LAPSE_MIN_INTERVAL_DAYS, factor, type: 2, learningStep: null, dueInMin: null };
+        }
+        return { interval: 0, factor, type: 3, learningStep: nextIdx, dueInMin: steps[nextIdx] };
+      }
+      case "easy":
+        return {
+          interval: Math.max(LAPSE_MIN_INTERVAL_DAYS, Math.round(LAPSE_MIN_INTERVAL_DAYS * (factor / 1000) * 1.3)),
+          factor: factor + 150,
+          type: 2,
+          learningStep: null,
+          dueInMin: null,
+        };
+    }
+  }
+
+  // Review stage (graduated, type 2).
+  switch (grade) {
+    case "again":
+      return { interval, factor: Math.max(MIN_FACTOR, factor - 200), type: 3, learningStep: 0, dueInMin: RELEARNING_STEPS_MIN[0] };
+    case "hard":
+      return { interval: Math.max(1, Math.round(interval * 1.2)), factor: Math.max(MIN_FACTOR, factor - 150), type: 2, learningStep: null, dueInMin: null };
+    case "good":
+      return { interval: Math.max(1, Math.round(interval * (factor / 1000))), factor, type: 2, learningStep: null, dueInMin: null };
+    case "easy":
+      return { interval: Math.max(1, Math.round(interval * (factor / 1000) * 1.3)), factor: factor + 150, type: 2, learningStep: null, dueInMin: null };
+  }
+}
+
+function formatInterval(days: number): string {
+  if (days <= 0) return "<10m";
+  if (days < 30) return `${days}d`;
+  if (days < 365) return `${Math.round(days / 30)}mo`;
+  return `${(days / 365).toFixed(1)}y`;
+}
+
+function formatMinutes(min: number): string {
+  if (min < 60) return `${Math.round(min)}m`;
+  if (min < 1440) return `${Math.round(min / 60)}h`;
+  return `${Math.round(min / 1440)}d`;
+}
+
+function previewLabel(card: { interval: number; factor: number; reps: number; type: number; learningStep: number | null }, grade: Grade): string {
+  const result = scheduleCard(card, grade);
+  return result.dueInMin != null ? formatMinutes(result.dueInMin) : formatInterval(result.interval);
+}
+
+async function gradeCard(source: DeckKey, dbId: number | string, updates: Record<string, unknown>) {
+  const res = await fetch("/api/grade-card", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source, id: dbId, updates }),
+  });
+  if (!res.ok) {
+    const { error } = await res.json();
+    throw new Error(error ?? "Failed to save grade");
+  }
+}
+
+interface DeckCounts {
+  key: DeckKey;
+  label: string;
+  newCount: number;
+  learnCount: number;
+  dueCount: number;
+}
+
+function dueDiffFrom(card: { mod?: number | null; interval?: number }): number | null {
+  return cardDueDiff(card as HanziCard);
+}
+
+// "Due today or overdue" for the actual review queue — review-stage (type 2)
+// cards only; learning/relearning cards use isLearningCardDue instead.
+function isDueForReview(reps: number | undefined, dueDiff: number | null) {
+  return (reps ?? 0) > 0 && dueDiff !== null && dueDiff <= 0;
+}
+
+// In Anki's own state model: type 1 = learning, type 3 = relearning.
+function isLearning(type: number | undefined) {
+  return type === 1 || type === 3;
+}
+
+// Learning/relearning cards use a real epoch-seconds `due` timestamp
+// (matching Anki's own convention for these queues), not a day count.
+function isLearningCardDue(due: number | null | undefined) {
+  return due != null && due <= Math.floor(Date.now() / 1000);
+}
+
+function isNeverStudied(reps: number | undefined) {
+  return (reps ?? 0) === 0;
+}
+
+function toDueCard(key: DeckKey, card: AnyCard, dueDiff: number | null, isNew: boolean): DueCard {
+  const stats = {
+    interval: card.interval ?? 0,
+    factor: card.factor ?? DEFAULT_FACTOR,
+    reps: card.reps ?? 0,
+    lapses: card.lapses ?? 0,
+    type: card.type ?? 0,
+    learningStep: card.learning_step ?? null,
+    due: card.due ?? null,
+  };
+  if (key === "hanzi") {
+    const c = card as HanziCard;
+    return { id: `hanzi-${c.note_id}`, dbId: c.note_id, source: "hanzi", front: c.character, sub: c.pronunciation, back: c.front, dueDiff, isNew, ...stats };
+  }
+  if (key === "hsk3") {
+    const w = card as Hsk3Word;
+    return { id: `hsk3-${w.word}`, dbId: w.word, source: "hsk3", front: w.word, sub: w.pinyin ?? "", back: w.meaning ?? "", dueDiff, isNew, ...stats };
+  }
+  const p = card as WordPhrase;
+  return { id: `wp-${p.note_id}`, dbId: p.note_id, source: "wp", front: p.word, sub: p.pinyin ?? "", back: p.meaning ?? "", dueDiff, isNew, ...stats };
+}
+
+function shuffle<T>(arr: T[]): T[] {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+// Due/overdue cards in random order (not sorted by how overdue they are —
+// with a whole deck often all overdue at once, "most overdue first" doesn't
+// add real priority), capped at `maxReviews`, then up to `newCardsLimit`
+// never-studied cards appended after.
+function buildQueue(
+  items: { key: DeckKey; card: AnyCard }[],
+  maxReviews: number,
+  newCardsLimit: number
+): DueCard[] {
+  const due: DueCard[] = [];
+  const newOnes: DueCard[] = [];
+  for (const { key, card } of items) {
+    if (!isNeverStudied(card.reps) && isLearning(card.type)) {
+      // Learning/relearning card: only surface it now if its step has
+      // actually elapsed — otherwise it stays hidden until its timer is up
+      // (matching Anki; the live session timer in ReviewSession handles
+      // resurfacing it once due, without needing a page reload).
+      if (isLearningCardDue(card.due)) due.push(toDueCard(key, card, 0, false));
+      continue;
+    }
+    const diff = dueDiffFrom(card);
+    if (isDueForReview(card.reps, diff)) {
+      due.push(toDueCard(key, card, diff, false));
+    } else if (isNeverStudied(card.reps)) {
+      newOnes.push(toDueCard(key, card, null, true));
+    }
+  }
+  return [...shuffle(due).slice(0, maxReviews), ...shuffle(newOnes).slice(0, newCardsLimit)];
+}
+
+// Counts shown in the deck menu — computed from our own data, not Anki.
+// New/Due are capped by the same session settings the review queue itself
+// uses, so the numbers shown are exactly what pressing into the deck yields.
+function countDeck(key: DeckKey, items: AnyCard[]): DeckCounts {
+  let newCount = 0, learnCount = 0, dueCount = 0;
+  for (const item of items) {
+    const diff = dueDiffFrom(item);
+    if (isNeverStudied(item.reps)) newCount++;
+    else if (isLearning(item.type)) learnCount++;
+    else if (isDueForReview(item.reps, diff)) dueCount++;
+  }
+  return {
+    key,
+    label: DECK_LABELS[key],
+    newCount: Math.min(newCount, loadNewCards(key)),
+    learnCount,
+    dueCount: Math.min(dueCount, loadMaxReviews(key)),
+  };
+}
+
+// Anki's deck list "new" and "learn" counts respect each deck's configured
+// daily limits (e.g. new cards/day) and today's scheduling state — not just
+// "how many cards have never been studied". Rather than reimplement that,
+// ask AnkiConnect directly so the numbers always match Anki's own screen.
+function CountCell({ value, color }: { value: number; color: string }) {
+  return (
+    <span className={`block text-center tabular-nums text-base font-semibold ${value > 0 ? color : "text-zinc-300 dark:text-zinc-600"}`}>
+      {value}
+    </span>
+  );
+}
+
+function DeckSettingsPopover({
+  deckKey,
+  anchor,
+  onClose,
+  onSave,
+}: {
+  deckKey: DeckKey;
+  anchor: { top: number; right: number };
+  onClose: () => void;
+  onSave: (maxReviews: number, newCards: number) => void;
+}) {
+  const [maxReviews, setMaxReviews] = useState(() => loadMaxReviews(deckKey));
+  const [newCards, setNewCards] = useState(() => loadNewCards(deckKey));
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [onClose]);
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div
+        ref={ref}
+        onClick={(e) => e.stopPropagation()}
+        style={{ position: "fixed", top: anchor.top, right: anchor.right }}
+        className="z-50 w-64 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl p-4 space-y-3"
+      >
+        <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Session limits</p>
+        <label className="block space-y-1">
+          <span className="text-xs text-zinc-500">New cards per session</span>
+          <input
+            type="number"
+            min={0}
+            value={newCards}
+            onChange={(e) => setNewCards(parseInt(e.target.value, 10) || 0)}
+            className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-sm tabular-nums text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+          />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-xs text-zinc-500">Maximum reviews per session</span>
+          <input
+            type="number"
+            min={1}
+            value={maxReviews}
+            onChange={(e) => setMaxReviews(parseInt(e.target.value, 10) || 1)}
+            className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-sm tabular-nums text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+          />
+        </label>
+        <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
+          Controls how many cards show up in a review session here. Doesn&apos;t affect Anki&apos;s own limits.
+        </p>
+        <button
+          onClick={() => { onSave(maxReviews, newCards); onClose(); }}
+          className="w-full rounded-lg px-3 py-1.5 text-xs font-medium text-white bg-zinc-800 dark:bg-zinc-200 dark:text-zinc-900 hover:opacity-90 transition-colors"
+        >
+          Save
+        </button>
+      </div>
+    </>
+  );
+}
+
+function DeckMenu({
+  decks,
+  onSelect,
+}: {
+  decks: DeckCounts[];
+  onSelect: (key: DeckKey) => void;
+}) {
+  const [settingsOpenFor, setSettingsOpenFor] = useState<DeckKey | null>(null);
+  const [anchor, setAnchor] = useState({ top: 0, right: 0 });
+  const [expanded, setExpanded] = useState(true);
+  const [, forceRerender] = useState(0);
+
+  const totals = decks.reduce(
+    (acc, d) => ({ newCount: acc.newCount + d.newCount, learnCount: acc.learnCount + d.learnCount, dueCount: acc.dueCount + d.dueCount }),
+    { newCount: 0, learnCount: 0, dueCount: 0 }
+  );
+
+  return (
+    <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none overflow-hidden max-w-xl">
+      <div className="grid grid-cols-[1fr_56px_56px_56px_28px] items-center gap-2 px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950/40 border-b border-zinc-200 dark:border-zinc-800">
+        <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Deck</span>
+        <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100 text-center">New</span>
+        <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100 text-center">Learn</span>
+        <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100 text-center">Due</span>
+        <span />
+      </div>
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full grid grid-cols-[1fr_56px_56px_56px_28px] items-center gap-2 px-4 py-2.5 text-xs font-semibold text-zinc-400 dark:text-zinc-500 border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 transition-colors"
+      >
+        <span className="flex items-center gap-1.5">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className={`w-3 h-3 transition-transform ${expanded ? "rotate-90" : ""}`}
+          >
+            <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 010-1.06L11.94 8l-4.73-4.71a.75.75 0 111.06-1.06l5.25 5.25a.75.75 0 010 1.06l-5.25 5.25a.75.75 0 01-1.06 0z" clipRule="evenodd" />
+          </svg>
+          Mandarin
+        </span>
+        <CountCell value={totals.newCount} color="text-blue-500 dark:text-blue-400" />
+        <CountCell value={totals.learnCount} color="text-red-500 dark:text-red-400" />
+        <CountCell value={totals.dueCount} color="text-emerald-600 dark:text-emerald-500" />
+        <span />
+      </button>
+      {expanded && decks.map((d) => {
+        const total = d.newCount + d.learnCount + d.dueCount;
+        return (
+          <div key={d.key} className="relative border-b border-zinc-100 dark:border-zinc-800 last:border-b-0 group">
+            <div className="w-full grid grid-cols-[1fr_56px_56px_56px_28px] items-center gap-2 px-4 py-3">
+              <button
+                onClick={() => onSelect(d.key)}
+                disabled={total === 0}
+                className="text-left text-sm text-zinc-800 dark:text-zinc-100 disabled:cursor-default disabled:opacity-60"
+              >
+                {d.label}
+              </button>
+              <CountCell value={d.newCount} color="text-blue-500 dark:text-blue-400" />
+              <CountCell value={d.learnCount} color="text-red-500 dark:text-red-400" />
+              <CountCell value={d.dueCount} color="text-emerald-600 dark:text-emerald-500" />
+              <button
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setAnchor({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
+                  setSettingsOpenFor((k) => (k === d.key ? null : d.key));
+                }}
+                className={`justify-self-end rounded-md p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-opacity ${
+                  settingsOpenFor === d.key ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                }`}
+                aria-label={`${d.label} settings`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+            {settingsOpenFor === d.key && (
+              <DeckSettingsPopover
+                deckKey={d.key}
+                anchor={anchor}
+                onClose={() => setSettingsOpenFor(null)}
+                onSave={(maxReviews, newCards) => {
+                  localStorage.setItem(maxReviewsKey(d.key), String(maxReviews));
+                  localStorage.setItem(newCardsKey(d.key), String(newCards));
+                  forceRerender((n) => n + 1);
+                }}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const GRADES: { key: Grade; label: string }[] = [
+  { key: "again", label: "Again" },
+  { key: "hard", label: "Hard" },
+  { key: "good", label: "Good" },
+  { key: "easy", label: "Easy" },
+];
+
+function HotkeyRow({ keys, description }: { keys: string[]; description: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-xs text-zinc-500 dark:text-zinc-400">
+      <span>{description}</span>
+      <span className="flex items-center gap-1 shrink-0">
+        {keys.map((key) => (
+          <kbd
+            key={key}
+            className="rounded border border-zinc-300 dark:border-zinc-600 px-1.5 py-0.5 font-mono text-[10px] text-zinc-600 dark:text-zinc-300"
+          >
+            {key}
+          </kbd>
+        ))}
+      </span>
+    </div>
+  );
+}
+
+function HotkeysPanel() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-[11px] text-zinc-400 dark:text-zinc-500 uppercase tracking-wide hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+      >
+        Hotkeys
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          className={`w-3 h-3 transition-transform ${open ? "rotate-180" : ""}`}
+        >
+          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-3 w-56 space-y-2.5 z-20 text-left">
+          <HotkeyRow keys={["Space"]} description="Show answer / Good" />
+          <HotkeyRow keys={["1"]} description="Again" />
+          <HotkeyRow keys={["2"]} description="Hard" />
+          <HotkeyRow keys={["3"]} description="Good" />
+          <HotkeyRow keys={["4"]} description="Easy" />
+          <HotkeyRow keys={["U"]} description="Undo" />
+          <HotkeyRow keys={["E"]} description="Edit card" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EditPanel({ card, onClose, onSave }: { card: DueCard; onClose: () => void; onSave: (front: string, sub: string, back: string) => void }) {
+  const [front, setFront] = useState(card.front);
+  const [sub, setSub] = useState(card.sub);
+  const [back, setBack] = useState(card.back);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-40 bg-black/20 flex items-center justify-center px-4" onClick={onClose}>
+      <div
+        ref={ref}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl p-5 space-y-3"
+      >
+        <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">Edit card</p>
+        <label className="block space-y-1">
+          <span className="text-xs text-zinc-500">Front</span>
+          <input
+            value={front}
+            onChange={(e) => setFront(e.target.value)}
+            className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+          />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-xs text-zinc-500">Pinyin</span>
+          <input
+            value={sub}
+            onChange={(e) => setSub(e.target.value)}
+            className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+          />
+        </label>
+        <label className="block space-y-1">
+          <span className="text-xs text-zinc-500">Meaning</span>
+          <textarea
+            value={back}
+            onChange={(e) => setBack(e.target.value)}
+            rows={3}
+            className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+          />
+        </label>
+        <div className="flex gap-2 pt-1">
+          <button
+            onClick={onClose}
+            className="flex-1 rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onSave(front, sub, back)}
+            className="flex-1 rounded-lg px-3 py-1.5 text-xs font-medium text-white bg-zinc-800 dark:bg-zinc-200 dark:text-zinc-900 hover:opacity-90 transition-colors"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Maps the unified front/sub/back shape back to each source's real columns.
+function buildEditUpdates(source: DeckKey, front: string, sub: string, back: string): Record<string, unknown> {
+  if (source === "hanzi") return { character: front, pronunciation: sub, front: back };
+  return { word: front, pinyin: sub, meaning: back };
+}
+
+function ReviewSession({ initialQueue, onExit }: { initialQueue: DueCard[]; onExit: () => void }) {
+  const [queue, setQueue] = useState(initialQueue);
+  // Learning/relearning cards that aren't due yet — resurfaced into `queue`
+  // by the timer effect below once their step's delay elapses, mirroring
+  // Anki interleaving learning cards back into the session automatically.
+  const [pending, setPending] = useState<{ card: DueCard; dueAt: number }[]>([]);
+  const [revealed, setRevealed] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const lastActions = useRef<{ original: DueCard; graded: DueCard }[]>([]);
+  const current = queue[0];
+
+  const grade = useRef<(g: Grade) => void>(() => {});
+  grade.current = (g: Grade) => {
+    const card = queue[0];
+    if (!card) return;
+    const result = scheduleCard(card, g);
+    const reps = card.reps + 1;
+    const lapses = g === "again" && card.type === 2 ? card.lapses + 1 : card.lapses;
+    const mod = Math.floor(Date.now() / 1000);
+    const due = result.dueInMin != null ? mod + Math.round(result.dueInMin * 60) : null;
+
+    gradeCard(card.source, card.dbId, {
+      interval: result.interval,
+      factor: result.factor,
+      reps,
+      lapses,
+      mod,
+      type: result.type,
+      queue: result.type,
+      learning_step: result.learningStep,
+      due,
+    }).catch((e) => {
+      setSaveError(e instanceof Error ? e.message : "Failed to save — check your connection.");
+    });
+
+    const rest = queue.slice(1);
+    const updatedCard: DueCard = {
+      ...card,
+      interval: result.interval,
+      factor: result.factor,
+      reps,
+      lapses,
+      isNew: false,
+      type: result.type,
+      learningStep: result.learningStep,
+      due,
+      dueDiff: result.dueInMin != null ? null : result.interval <= 0 ? 0 : result.interval,
+    };
+    lastActions.current = [...lastActions.current, { original: card, graded: updatedCard }];
+
+    if (result.dueInMin != null) {
+      // Still learning/relearning — holds off the visible queue until its
+      // step's delay elapses, instead of instantly cycling back like a
+      // graduated card would.
+      setPending((p) => [...p, { card: updatedCard, dueAt: Date.now() + result.dueInMin! * 60000 }]);
+      setQueue(rest);
+    } else {
+      setQueue(rest);
+    }
+    setRevealed(false);
+  };
+
+  const undo = useRef<() => void>(() => {});
+  undo.current = () => {
+    const stack = lastActions.current;
+    const action = stack[stack.length - 1];
+    if (!action) return;
+    gradeCard(action.original.source, action.original.dbId, {
+      interval: action.original.interval,
+      factor: action.original.factor,
+      reps: action.original.reps,
+      lapses: action.original.lapses,
+      type: action.original.type,
+      queue: action.original.type,
+      learning_step: action.original.learningStep,
+      due: action.original.due,
+    }).catch((e) => {
+      setSaveError(e instanceof Error ? e.message : "Failed to undo — check your connection.");
+    });
+    setQueue((q) => [action.original, ...q.filter((c) => c.id !== action.graded.id)]);
+    setPending((p) => p.filter((x) => x.card.id !== action.graded.id));
+    lastActions.current = stack.slice(0, -1);
+    setRevealed(false);
+  };
+
+  // Polls for pending learning/relearning cards whose step delay has
+  // elapsed and splices them back into the live queue near the front —
+  // Anki interleaves them with other due cards rather than appending them
+  // at the very end.
+  useEffect(() => {
+    if (pending.length === 0) return;
+    const id = setInterval(() => {
+      const now = Date.now();
+      const ready = pending.filter((p) => p.dueAt <= now);
+      if (ready.length === 0) return;
+      setPending((p) => p.filter((x) => x.dueAt > now));
+      setQueue((q) => {
+        const next = [...q];
+        for (const { card } of ready) {
+          const pos = Math.min(next.length, Math.floor(Math.random() * 3) + 1);
+          next.splice(pos, 0, card);
+        }
+        return next;
+      });
+    }, 5000);
+    return () => clearInterval(id);
+  }, [pending]);
+
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.repeat || editOpen) return;
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
+
+      if (e.key.toLowerCase() === "u") { undo.current(); return; }
+      if (e.key.toLowerCase() === "e") { setEditOpen(true); return; }
+
+      if (e.code === "Space") {
+        e.preventDefault();
+        if (!revealed) setRevealed(true);
+        else grade.current("good");
+        return;
+      }
+
+      if (!revealed) return;
+      if (e.key === "1") grade.current("again");
+      else if (e.key === "2") grade.current("hard");
+      else if (e.key === "3") grade.current("good");
+      else if (e.key === "4") grade.current("easy");
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [revealed, editOpen]);
+
+  if (!current) {
+    const nextIn = pending.length > 0 ? Math.max(0, Math.min(...pending.map((p) => p.dueAt)) - Date.now()) : null;
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4 max-w-xl mx-auto">
+        <p className="text-lg font-semibold text-emerald-600 dark:text-emerald-500">
+          {nextIn != null ? "Waiting on learning cards…" : "All done!"}
+        </p>
+        {nextIn != null && (
+          <p className="text-sm text-zinc-500">Next card back in {formatMinutes(Math.max(1, nextIn / 60000))}</p>
+        )}
+        <button onClick={onExit} className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">
+          ← Decks
+        </button>
+      </div>
+    );
+  }
+
+  const remainingNew = queue.filter((c) => c.isNew).length;
+  const remainingDue = queue.length - remainingNew;
+
+  return (
+    <>
+      <div className="w-full flex items-center justify-between">
+        <button
+          onClick={onExit}
+          className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+        >
+          ← Decks
+        </button>
+        <HotkeysPanel />
+      </div>
+
+      <div className="w-full min-h-[65vh] flex flex-col">
+        <div className="flex-1 flex flex-col items-center text-center px-4 pt-28">
+          <div className="max-w-xl">
+            <p className="text-3xl">{current.front}</p>
+
+            {revealed && (
+              <div className="mt-8 space-y-2 border-t border-zinc-200 dark:border-zinc-800 pt-6">
+                {current.sub && <p className="text-lg text-emerald-700 dark:text-emerald-500">{current.sub}</p>}
+                {current.back && (
+                  <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.back}</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 bg-zinc-100 dark:bg-zinc-950 flex flex-col items-center gap-3 pt-4 pb-6 px-4">
+          {saveError && <p className="text-xs text-red-500">{saveError}</p>}
+
+          {!revealed ? (
+            <>
+              <p className="text-sm">
+                <span className="text-blue-500 font-medium">{remainingNew}</span>
+                {" + "}
+                <span className="text-emerald-600 dark:text-emerald-500 font-medium underline">{remainingDue}</span>
+              </p>
+              <button
+                onClick={(e) => { e.currentTarget.blur(); setRevealed(true); }}
+                className="rounded-full border border-zinc-300 dark:border-zinc-600 px-10 py-2 text-sm text-zinc-800 dark:text-zinc-100 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+              >
+                Show Answer
+              </button>
+            </>
+          ) : (
+            <div className="grid grid-cols-4 gap-2 w-full max-w-xl">
+              {GRADES.map(({ key, label }) => {
+                return (
+                  <div key={key} className="flex flex-col items-center gap-1.5">
+                    <span className="text-xs text-zinc-400 dark:text-zinc-500">{previewLabel(current, key)}</span>
+                    <button
+                      onClick={(e) => { e.currentTarget.blur(); grade.current(key); }}
+                      className="w-full rounded-full border border-zinc-300 dark:border-zinc-600 py-2 text-sm text-zinc-800 dark:text-zinc-100 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                    >
+                      {label}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {editOpen && (
+        <EditPanel
+          card={current}
+          onClose={() => setEditOpen(false)}
+          onSave={(front, sub, back) => {
+            gradeCard(current.source, current.dbId, buildEditUpdates(current.source, front, sub, back)).catch((e) => {
+              setSaveError(e instanceof Error ? e.message : "Failed to save edit.");
+            });
+            setQueue((q) => q.map((c) => (c.id === current.id ? { ...c, front, sub, back } : c)));
+            setEditOpen(false);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+export default function FlashcardTab({
+  cards,
+  hsk3Coverage,
+  wordsPhrases,
+}: {
+  cards: HanziCard[];
+  hsk3Coverage: Hsk3Coverage;
+  wordsPhrases: WordPhrase[];
+}) {
+  const [selectedDeck, setSelectedDeck] = useState<DeckKey | null>(null);
+
+  const hsk3Known = useMemo(
+    () => Object.values(hsk3Coverage.levels).flat().filter((w) => w.known),
+    [hsk3Coverage]
+  );
+
+  const decks = useMemo(
+    () => [countDeck("hanzi", cards), countDeck("hsk3", hsk3Known), countDeck("wp", wordsPhrases)],
+    [cards, hsk3Known, wordsPhrases]
+  );
+
+  const queue = useMemo(() => {
+    if (!selectedDeck) return [];
+    const items =
+      selectedDeck === "hanzi"
+        ? cards.map((card) => ({ key: "hanzi" as const, card }))
+        : selectedDeck === "hsk3"
+        ? hsk3Known.map((card) => ({ key: "hsk3" as const, card }))
+        : wordsPhrases.map((card) => ({ key: "wp" as const, card }));
+    return buildQueue(items, loadMaxReviews(selectedDeck), loadNewCards(selectedDeck));
+  }, [selectedDeck, cards, hsk3Known, wordsPhrases]);
+
+  if (!selectedDeck) {
+    return <DeckMenu decks={decks} onSelect={setSelectedDeck} />;
+  }
+
+  if (queue.length === 0) {
+    return (
+      <div className="space-y-4 max-w-xl">
+        <button onClick={() => setSelectedDeck(null)} className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">
+          ← Decks
+        </button>
+        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-10 text-center">
+          <p className="text-lg font-semibold text-emerald-600 dark:text-emerald-500">All caught up!</p>
+          <p className="text-sm text-zinc-500 mt-1">Nothing due in this deck right now.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return <ReviewSession initialQueue={queue} onExit={() => setSelectedDeck(null)} key={selectedDeck} />;
+}

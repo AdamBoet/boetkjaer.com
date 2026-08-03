@@ -6,10 +6,19 @@ import { tileStyle as masteryTileStyle, computeTooltipPos } from "./CharacterGri
 export interface Hsk3Word {
   word: string;
   known: boolean;
-  note_id?: number;
-  score?: number; // 0 (easy) .. 1 (hard), only present if the word has review history
   pinyin?: string;
   meaning?: string;
+  note_id?: number;
+  card_id?: number;
+  interval?: number;
+  reps?: number;
+  lapses?: number;
+  factor?: number;
+  queue?: number;
+  due?: number;
+  type?: number;
+  learning_step?: number | null;
+  mod?: number | null;
 }
 
 export interface Hsk3Coverage {
@@ -19,7 +28,7 @@ export interface Hsk3Coverage {
   updatedAt: string;
 }
 
-const LEVELS: { key: string; label: string }[] = [
+export const LEVELS: { key: string; label: string }[] = [
   { key: "hsk1", label: "HSK 1" },
   { key: "hsk2", label: "HSK 2" },
   { key: "hsk3", label: "HSK 3" },
@@ -29,28 +38,53 @@ const LEVELS: { key: string; label: string }[] = [
   { key: "hsk7-9", label: "HSK 7–9" },
 ];
 
+// Same difficulty formula as HanziDashboard.tsx: percentile-ranks every known,
+// reviewed word by forget rate + lapse count + interval length, 0 (easy) .. 1 (hard).
+export function computeScoreMap(words: Hsk3Word[]): Map<string, number> {
+  const scorable = words.filter(
+    (w) => w.known && (w.reps ?? 0) > 0 && w.interval != null && w.lapses != null
+  );
+  const maxLapses = Math.max(...scorable.map((w) => w.lapses!), 1);
+
+  const raw = new Map(
+    scorable.map((w) => {
+      const lapseRate = w.lapses! / Math.max(w.reps!, 1);
+      const lapseAbs = w.lapses! / maxLapses;
+      const intervalDiff = 1 - Math.min(w.interval!, 90) / 90;
+      return [w.word, lapseRate * 0.45 + lapseAbs * 0.2 + intervalDiff * 0.35];
+    })
+  );
+
+  const ordered = [...raw.entries()].sort((a, b) => a[1] - b[1]);
+  const scores = new Map<string, number>();
+  ordered.forEach(([word], i) => {
+    scores.set(word, ordered.length > 1 ? i / (ordered.length - 1) : 0.5);
+  });
+  return scores;
+}
+
+// Mastery = 1 - average difficulty score across known, reviewed words.
+// Same formula as the overall Mastery widget on the 汉字 dashboard.
+export function mastery(words: Hsk3Word[]): number | null {
+  const scoreMap = computeScoreMap(words);
+  if (scoreMap.size === 0) return null;
+  const avg = [...scoreMap.values()].reduce((s, v) => s + v, 0) / scoreMap.size;
+  return Math.round((1 - avg) * 100);
+}
+
 // Unknown: flat muted tile. Known, no review history yet (new card): flat green.
 // Known with review history: same green(easy)→red(hard) scale as the 汉字 grid.
-function tileStyle(w: Hsk3Word, isDark: boolean): Record<string, string> {
+function tileStyle(w: Hsk3Word, score: number | undefined, isDark: boolean): Record<string, string> {
   if (!w.known) {
     return isDark
       ? { backgroundColor: "hsl(0 0% 13%)", borderColor: "hsl(0 0% 24%)" }
       : { backgroundColor: "hsl(0 0% 95%)", borderColor: "hsl(0 0% 84%)" };
   }
-  const percentile = w.score ?? 0;
+  const percentile = score ?? 0;
   const hue = Math.round(120 * (1 - percentile));
   return isDark
     ? { backgroundColor: `hsl(${hue} 60% 20%)`, borderColor: `hsl(${hue} 65% 42%)` }
     : { backgroundColor: `hsl(${hue} 65% 78%)`, borderColor: `hsl(${hue} 55% 48%)` };
-}
-
-// Mastery = 1 - average difficulty score across known words that have review
-// history. Same formula as the overall Mastery widget on the 汉字 dashboard.
-export function mastery(words: Hsk3Word[]): number | null {
-  const scored = words.filter((w) => w.known && w.score != null).map((w) => w.score!);
-  if (scored.length === 0) return null;
-  const avg = scored.reduce((s, v) => s + v, 0) / scored.length;
-  return Math.round((1 - avg) * 100);
 }
 
 export function StatCard({
@@ -184,15 +218,28 @@ function wordTextClass(word: string): string {
   return "text-[9px] sm:text-xs";
 }
 
-function Hsk3Tooltip({ word }: { word: Hsk3Word }) {
-  const diffPct = word.score != null ? Math.round(word.score * 100) : null;
-  const hue = word.score != null ? Math.round(120 * (1 - word.score)) : null;
+function relativeDue(word: Hsk3Word): string | null {
+  if (!word.mod || !word.interval) return null;
+  const r = new Date(word.mod * 1000);
+  const dueDay = new Date(r.getFullYear(), r.getMonth(), r.getDate() + word.interval);
+  const t = new Date();
+  const todayDay = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  const diff = Math.round((dueDay.getTime() - todayDay.getTime()) / 86400000);
+  if (diff < 0) return "Overdue";
+  if (diff === 0) return "Due today";
+  return `Due in ${diff}d`;
+}
+
+function Hsk3Tooltip({ word, score }: { word: Hsk3Word; score: number | undefined }) {
+  const diffPct = score != null ? Math.round(score * 100) : null;
+  const hue = score != null ? Math.round(120 * (1 - score)) : null;
   const diffLabel =
-    word.score == null ? null
-    : word.score < 0.25 ? "Easy"
-    : word.score < 0.5  ? "Average"
-    : word.score < 0.75 ? "Hard"
+    score == null ? null
+    : score < 0.25 ? "Easy"
+    : score < 0.5  ? "Average"
+    : score < 0.75 ? "Hard"
     : "Very hard";
+  const due = relativeDue(word);
 
   return (
     <div className="w-60 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl p-3.5 space-y-2.5 text-sm text-zinc-900 dark:text-zinc-100">
@@ -224,6 +271,37 @@ function Hsk3Tooltip({ word }: { word: Hsk3Word }) {
           </div>
         </div>
       )}
+
+      {(word.interval != null || word.reps != null || word.lapses != null) && (
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+          {word.interval != null && (
+            <>
+              <span className="text-zinc-500">Interval</span>
+              <span className="text-zinc-700 dark:text-zinc-200">{word.interval} days</span>
+            </>
+          )}
+          {word.reps != null && (
+            <>
+              <span className="text-zinc-500">Reviews</span>
+              <span className="text-zinc-700 dark:text-zinc-200">{word.reps}×</span>
+            </>
+          )}
+          {word.lapses != null && (
+            <>
+              <span className="text-zinc-500">Lapses</span>
+              <span className={word.lapses > 0 ? "text-red-500" : "text-zinc-700 dark:text-zinc-200"}>{word.lapses}</span>
+            </>
+          )}
+          {due && (
+            <>
+              <span className="text-zinc-500">Next due</span>
+              <span className={due === "Overdue" || due === "Due today" ? "text-amber-500" : "text-zinc-700 dark:text-zinc-200"}>
+                {due}
+              </span>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -235,6 +313,8 @@ function LevelPanel({ words, isDark }: { words: Hsk3Word[]; isDark: boolean }) {
   const [pinnedPos, setPinnedPos] = useState({ x: 0, y: 0 });
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scoreMap = computeScoreMap(words);
 
   useEffect(() => () => {
     if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -282,7 +362,7 @@ function LevelPanel({ words, isDark }: { words: Hsk3Word[]; isDark: boolean }) {
           <div
             key={w.word}
             className="flex items-center justify-center rounded-md sm:rounded-lg border h-10 sm:h-16 cursor-default transition-transform hover:scale-110 hover:z-10"
-            style={tileStyle(w, isDark)}
+            style={tileStyle(w, scoreMap.get(w.word), isDark)}
             onMouseEnter={() => { cancelHide(); if (!pinned) scheduleShow(w); }}
             onMouseLeave={() => { cancelShow(); scheduleHide(); }}
             onClick={(e) => handleTileClick(e, w)}
@@ -303,7 +383,7 @@ function LevelPanel({ words, isDark }: { words: Hsk3Word[]; isDark: boolean }) {
             className="sm:hidden fixed bottom-4 left-0 right-0 z-50 flex justify-center px-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <Hsk3Tooltip word={activeWord} />
+            <Hsk3Tooltip word={activeWord} score={scoreMap.get(activeWord.word)} />
           </div>
           <div
             className={`hidden sm:block fixed z-50 ${pinned ? "" : "pointer-events-none"}`}
@@ -313,7 +393,7 @@ function LevelPanel({ words, isDark }: { words: Hsk3Word[]; isDark: boolean }) {
             onMouseMove={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
           >
-            <Hsk3Tooltip word={activeWord} />
+            <Hsk3Tooltip word={activeWord} score={scoreMap.get(activeWord.word)} />
           </div>
         </>
       )}
