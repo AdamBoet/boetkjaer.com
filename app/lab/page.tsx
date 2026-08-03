@@ -17,15 +17,17 @@ export default async function Overview() {
   const [{ data: statsRow }, { data: cardsRows }, { data: economyTransactions }] = await Promise.all([
     supabase.from("anki_stats").select("*").eq("id", 1).single(),
     supabase.from("hanzi_cards").select("*").order("rank"),
-    supabase.from("economy_transactions").select("type, amount"),
+    supabase.from("economy_transactions").select("type, amount, occurred_on"),
   ]);
 
   const stats = statsRow ?? staticStats;
   const cards = (cardsRows?.length ? cardsRows : staticCards) as HanziCard[];
-  const totalSpending = (economyTransactions ?? [])
+  const currentMonthKey = new Date().toISOString().slice(0, 7);
+  const currentMonthTransactions = (economyTransactions ?? []).filter(t => t.occurred_on.startsWith(currentMonthKey));
+  const totalSpending = currentMonthTransactions
     .filter(t => t.type === "expense")
     .reduce((s, t) => s + t.amount, 0);
-  const totalEarnings = (economyTransactions ?? [])
+  const totalEarnings = currentMonthTransactions
     .filter(t => t.type === "income")
     .reduce((s, t) => s + t.amount, 0);
   const net = totalEarnings - totalSpending;
@@ -127,7 +129,9 @@ export default async function Overview() {
           <span className="text-sm font-medium text-zinc-600 dark:text-zinc-300">Economy</span>
           <span className="text-xs text-zinc-400 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-400 transition-colors">View →</span>
         </div>
-        <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">Net</p>
+        <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">
+          Net · {new Date().toLocaleDateString("en-GB", { month: "long" })}
+        </p>
         <p className={`text-4xl font-bold text-center ${net < 0 ? "text-red-500 dark:text-red-400" : "text-emerald-700 dark:text-emerald-500"}`}>
           {numberFormat.format(net)} kr
         </p>

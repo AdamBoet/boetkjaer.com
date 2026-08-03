@@ -240,8 +240,12 @@ export default function EconomyDashboard({
     a.type !== b.type ? (a.type === "expense" ? -1 : 1) : b.amount - a.amount
   );
 
-  const totalSpending = transactions.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
-  const totalEarnings = transactions.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
+  const currentMonthKey = todayISO().slice(0, 7);
+  const currentMonthTransactions = transactions.filter(t => t.occurred_on.startsWith(currentMonthKey));
+  const currentMonthLabel = new Date().toLocaleDateString("en-GB", { month: "long" });
+
+  const totalSpending = currentMonthTransactions.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
+  const totalEarnings = currentMonthTransactions.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
   const net = totalEarnings - totalSpending;
 
   function categoryOf(t: Transaction): string {
@@ -253,7 +257,7 @@ export default function EconomyDashboard({
   }
 
   const categoryTotals = new Map<string, number>();
-  transactions
+  currentMonthTransactions
     .filter(t => t.type === "expense")
     .forEach(t => {
       const cat = categoryOf(t);
@@ -498,7 +502,7 @@ export default function EconomyDashboard({
 
       <div className="order-2 sm:order-1 grid grid-cols-1 sm:grid-cols-[1fr_1.3fr] gap-3">
         <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-6">
-          <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">Net</p>
+          <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">Net · {currentMonthLabel}</p>
           <p className={`text-5xl font-bold ${net < 0 ? "text-red-500 dark:text-red-400" : "text-emerald-700 dark:text-emerald-500"}`}>
             {fmt(net)}
           </p>
@@ -515,7 +519,7 @@ export default function EconomyDashboard({
         </div>
 
         <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-6 flex flex-col">
-          <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-3">Spending by category</p>
+          <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-3">Spending by category · {currentMonthLabel}</p>
           <CategoryDonut segments={donutSegments} centerLabel={fmt(totalSpending)} />
         </div>
       </div>
