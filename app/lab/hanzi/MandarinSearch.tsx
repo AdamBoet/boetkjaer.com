@@ -176,19 +176,28 @@ export default function MandarinSearch({
               </button>
               <div className="flex items-start gap-3">
                 <span className="text-3xl leading-none shrink-0">{selected.front}</span>
-                <div className="min-w-0 space-y-1">
+                <div className="min-w-0 space-y-3">
                   {(() => {
                     const prons = selected.sub ? selected.sub.split("/").map((s) => s.trim()) : [];
+                    // Each meaning segment is typically "word (gloss)" — the
+                    // leading word just repeats what the pinyin already
+                    // says, so keep only the parenthesized gloss itself.
                     const meanings = selected.back
-                      ? selected.back.split("/").map((s) => s.replace(/[()]/g, "").trim())
+                      ? selected.back.split("/").map((s) => {
+                          const m = s.match(/\(([^)]*)\)/);
+                          return (m ? m[1] : s).trim();
+                        })
                       : [];
                     const rows = Math.max(prons.length, meanings.length);
                     return Array.from({ length: rows }, (_, i) => (
-                      <p key={i} className="text-sm">
-                        {prons[i] && <span className="text-emerald-700 dark:text-emerald-500">{prons[i]}</span>}
-                        {prons[i] && meanings[i] && " "}
-                        {meanings[i] && <span className="text-zinc-700 dark:text-zinc-300">{meanings[i]}</span>}
-                      </p>
+                      <div key={i}>
+                        <p className="text-sm">
+                          {prons[i] && <span className="text-emerald-700 dark:text-emerald-500">{prons[i]}</span>}
+                          {prons[i] && meanings[i] && " "}
+                          {meanings[i] && <span className="text-zinc-700 dark:text-zinc-300">{meanings[i]}</span>}
+                        </p>
+                        {/* Per-pronunciation examples will go here once synced from Anki. */}
+                      </div>
                     ));
                   })()}
                 </div>
