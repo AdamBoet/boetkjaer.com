@@ -183,9 +183,12 @@ export default function MandarinSearch({
                         {pron.trim()}
                       </p>
                     ))}
-                  {selected.back && (
-                    <p className="text-sm text-zinc-700 dark:text-zinc-300 mt-1 whitespace-pre-line">{selected.back}</p>
-                  )}
+                  {selected.back &&
+                    selected.back.split("/").map((meaning, i) => (
+                      <p key={i} className="text-sm text-zinc-700 dark:text-zinc-300 mt-1 whitespace-pre-line">
+                        {meaning.trim()}
+                      </p>
+                    ))}
                 </div>
               </div>
               <div className="flex items-center gap-2 text-xs text-zinc-400 dark:text-zinc-500 pt-1 border-t border-zinc-100 dark:border-zinc-800">
