@@ -159,7 +159,7 @@ export default function MandarinSearch({
                     onClick={() => setSelected(r)}
                     className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/60 transition-colors border-b border-zinc-100 dark:border-zinc-800 last:border-b-0"
                   >
-                    <span className="text-xl leading-none w-8 shrink-0">{r.front}</span>
+                    <span className="text-xl leading-none shrink-0 whitespace-nowrap min-w-[2rem]">{r.front}</span>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm text-zinc-800 dark:text-zinc-100 truncate">
                         {r.sub && <span className="text-zinc-500 dark:text-zinc-400 mr-1.5">{r.sub}</span>}
