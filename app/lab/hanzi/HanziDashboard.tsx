@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useTheme } from "next-themes";
 import { type HanziCard } from "./CharacterGrid";
+import { cleanMeaning } from "./card-utils";
 import WritingPractice from "./WritingPractice";
 import Hsk3Grid, { type Hsk3Coverage } from "./Hsk3Grid";
 import MandarinOverview from "./MandarinOverview";
@@ -170,11 +171,13 @@ export default function HanziDashboard({
             : {};
         if (existing) return { ...existing, ...stats };
         const rankTag = note.tags.find((t) => /^\d+$/.test(t));
+        const pronunciation = note.fields["Pronunciation"]?.value ?? "";
+        const rawFront = note.fields["Front"]?.value ?? "";
         return {
           character: note.fields["Character"]?.value ?? "",
           rank: rankTag ? parseInt(rankTag, 10) : 9999,
-          pronunciation: note.fields["Pronunciation"]?.value ?? "",
-          front: note.fields["Front"]?.value ?? "",
+          pronunciation,
+          front: cleanMeaning(pronunciation, rawFront),
           note_id: note.noteId,
           ...stats,
         };

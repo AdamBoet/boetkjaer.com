@@ -30,6 +30,22 @@ function normalize(s: string): string {
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
+// For a multi-pronunciation entry, find which "/"-separated pronunciation
+// (or its paired meaning) the query actually matched, so the collapsed
+// result row can show just that one instead of all of them crammed
+// together \u2014 the detail view still shows every pronunciation.
+function matchedSegment(r: SearchResult, normQuery: string): { sub: string; back: string } {
+  const prons = r.sub ? r.sub.split("/").map((s) => s.trim()) : [];
+  const meanings = r.back ? r.back.split("/").map((s) => s.trim()) : [];
+  if (prons.length < 2) return { sub: r.sub, back: r.back };
+  for (let i = 0; i < Math.max(prons.length, meanings.length); i++) {
+    if ((prons[i] && normalize(prons[i]).includes(normQuery)) || (meanings[i] && normalize(meanings[i]).includes(normQuery))) {
+      return { sub: prons[i] ?? "", back: meanings[i] ?? "" };
+    }
+  }
+  return { sub: prons[0] ?? "", back: meanings[0] ?? "" };
+}
+
 export default function MandarinSearch({
   cards,
   hsk3Coverage,
@@ -178,16 +194,12 @@ export default function MandarinSearch({
                 <span className="text-3xl leading-none shrink-0">{selected.front}</span>
                 <div className="min-w-0 space-y-3">
                   {(() => {
+                    // "/" separates pronunciations in both fields, and each
+                    // meaning segment is already just its own clean gloss
+                    // (normalized in the data itself — see cleanMeaning in
+                    // card-utils.ts).
                     const prons = selected.sub ? selected.sub.split("/").map((s) => s.trim()) : [];
-                    // Each meaning segment is typically "word (gloss)" — the
-                    // leading word just repeats what the pinyin already
-                    // says, so keep only the parenthesized gloss itself.
-                    const meanings = selected.back
-                      ? selected.back.split("/").map((s) => {
-                          const m = s.match(/\(([^)]*)\)/);
-                          return (m ? m[1] : s).trim();
-                        })
-                      : [];
+                    const meanings = selected.back ? selected.back.split("/").map((s) => s.trim()) : [];
                     const rows = Math.max(prons.length, meanings.length);
                     return Array.from({ length: rows }, (_, i) => (
                       <div key={i}>
@@ -213,7 +225,9 @@ export default function MandarinSearch({
             </div>
           ) : (
             <ul>
-              {results.map((r, i) => (
+              {results.map((r, i) => {
+                const { sub, back } = matchedSegment(r, normalize(query.trim()));
+                return (
                 <li key={r.id}>
                   <button
                     ref={(el) => { itemRefs.current[i] = el; }}
@@ -226,14 +240,15 @@ export default function MandarinSearch({
                     <span className="text-xl leading-none shrink-0 whitespace-nowrap min-w-[2rem]">{r.front}</span>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm text-zinc-800 dark:text-zinc-100 truncate">
-                        {r.sub && <span className="text-zinc-500 dark:text-zinc-400 mr-1.5">{r.sub}</span>}
-                        <span className="text-zinc-400 dark:text-zinc-500 text-xs">{r.back}</span>
+                        {sub && <span className="text-zinc-500 dark:text-zinc-400 mr-1.5">{sub}</span>}
+                        <span className="text-zinc-400 dark:text-zinc-500 text-xs">{back}</span>
                       </p>
                     </div>
                     <span className="text-[10px] shrink-0 text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">{r.levelLabel ?? SOURCE_LABEL[r.source]}</span>
                   </button>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </div>
