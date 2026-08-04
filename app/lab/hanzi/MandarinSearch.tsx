@@ -41,7 +41,9 @@ export default function MandarinSearch({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<SearchResult | null>(null);
+  const [highlighted, setHighlighted] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -96,6 +98,36 @@ export default function MandarinSearch({
       .slice(0, 25);
   }, [query, index]);
 
+  useEffect(() => {
+    setHighlighted(0);
+  }, [results]);
+
+  function handleInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (selected) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setOpen(true);
+      setHighlighted((i) => {
+        const next = Math.min(i + 1, results.length - 1);
+        itemRefs.current[next]?.scrollIntoView({ block: "nearest" });
+        return next;
+      });
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlighted((i) => {
+        const next = Math.max(i - 1, 0);
+        itemRefs.current[next]?.scrollIntoView({ block: "nearest" });
+        return next;
+      });
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const r = results[highlighted];
+      if (r) setSelected(r);
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  }
+
   return (
     <div ref={ref} className="relative w-full max-w-md">
       <div className="relative">
@@ -116,6 +148,7 @@ export default function MandarinSearch({
             setSelected(null);
           }}
           onFocus={() => setOpen(true)}
+          onKeyDown={handleInputKeyDown}
           placeholder="Search characters, pinyin, meaning…"
           className="w-full rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 pl-9 pr-3 py-2 text-sm text-zinc-800 dark:text-zinc-200 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-400"
         />
@@ -153,11 +186,15 @@ export default function MandarinSearch({
             </div>
           ) : (
             <ul>
-              {results.map((r) => (
+              {results.map((r, i) => (
                 <li key={r.id}>
                   <button
+                    ref={(el) => { itemRefs.current[i] = el; }}
                     onClick={() => setSelected(r)}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-zinc-50 dark:hover:bg-zinc-800/60 transition-colors border-b border-zinc-100 dark:border-zinc-800 last:border-b-0"
+                    onMouseEnter={() => setHighlighted(i)}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors border-b border-zinc-100 dark:border-zinc-800 last:border-b-0 ${
+                      i === highlighted ? "bg-zinc-50 dark:bg-zinc-800/60" : ""
+                    }`}
                   >
                     <span className="text-xl leading-none shrink-0 whitespace-nowrap min-w-[2rem]">{r.front}</span>
                     <div className="min-w-0 flex-1">
