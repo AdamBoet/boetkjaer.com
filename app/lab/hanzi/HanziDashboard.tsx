@@ -8,6 +8,7 @@ import Hsk3Grid, { type Hsk3Coverage } from "./Hsk3Grid";
 import MandarinOverview from "./MandarinOverview";
 import FlashcardTab, { type WordPhrase } from "./FlashcardTab";
 import HanziTab from "./HanziTab";
+import MandarinSearch from "./MandarinSearch";
 
 const YEARLY_GOAL = 1500;
 const CARDS_PER_DAY = 5;
@@ -366,6 +367,8 @@ export default function HanziDashboard({
           {error && <p className="text-xs text-red-500 max-w-48 text-right">{error}</p>}
         </div>
       </div>
+
+      <MandarinSearch cards={cards} hsk3Coverage={hsk3Coverage} wordsPhrases={wordsPhrases} />
 
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-800">
