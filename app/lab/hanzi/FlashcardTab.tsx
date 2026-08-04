@@ -447,11 +447,11 @@ function DeckMenu({
         const total = d.newCount + d.learnCount + d.dueCount;
         return (
           <div key={d.key} className="relative border-b border-zinc-100 dark:border-zinc-800 last:border-b-0 group">
-            <div className="w-full grid grid-cols-[1fr_56px_56px_56px_28px] items-center gap-2 px-4 py-3">
+            <div className="w-full grid grid-cols-[1fr_56px_56px_56px_28px] items-center gap-2 px-4 py-3 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
               <button
                 onClick={() => onSelect(d.key)}
                 disabled={total === 0}
-                className="text-left text-sm text-zinc-800 dark:text-zinc-100 disabled:cursor-default disabled:opacity-60"
+                className="text-left text-sm text-zinc-800 dark:text-zinc-100 disabled:cursor-default disabled:opacity-60 hover:underline"
               >
                 {d.label}
               </button>
