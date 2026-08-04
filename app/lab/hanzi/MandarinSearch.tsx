@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { type HanziCard } from "./CharacterGrid";
-import { type Hsk3Coverage } from "./Hsk3Grid";
+import { LEVELS, type Hsk3Coverage } from "./Hsk3Grid";
 import { type WordPhrase } from "./FlashcardTab";
 
 type Source = "hanzi" | "hsk3" | "wp";
@@ -15,6 +15,7 @@ interface SearchResult {
   back: string;
   interval?: number;
   reps?: number;
+  levelLabel?: string; // e.g. "HSK 3" — only set for hsk3 results
 }
 
 const SOURCE_LABEL: Record<Source, string> = {
@@ -64,17 +65,24 @@ export default function MandarinSearch({
       reps: c.reps,
     }));
 
-    const allHsk3 = Object.values(hsk3Coverage.levels).flat();
-    const uniqueHsk3 = Array.from(new Map(allHsk3.map((w) => [w.word, w])).values());
-    const hsk3Results: SearchResult[] = uniqueHsk3.map((w) => ({
-      id: `hsk3-${w.word}`,
-      source: "hsk3",
-      front: w.word,
-      sub: w.pinyin ?? "",
-      back: w.meaning ?? "",
-      interval: w.interval,
-      reps: w.reps,
-    }));
+    const seenHsk3 = new Set<string>();
+    const hsk3Results: SearchResult[] = [];
+    for (const { key, label } of LEVELS) {
+      for (const w of hsk3Coverage.levels[key] ?? []) {
+        if (seenHsk3.has(w.word)) continue;
+        seenHsk3.add(w.word);
+        hsk3Results.push({
+          id: `hsk3-${w.word}`,
+          source: "hsk3",
+          front: w.word,
+          sub: w.pinyin ?? "",
+          back: w.meaning ?? "",
+          interval: w.interval,
+          reps: w.reps,
+          levelLabel: label,
+        });
+      }
+    }
 
     const wpResults: SearchResult[] = wordsPhrases.map((p) => ({
       id: `wp-${p.note_id}`,
@@ -176,7 +184,7 @@ export default function MandarinSearch({
                 </div>
               </div>
               <div className="flex items-center gap-2 text-xs text-zinc-400 dark:text-zinc-500 pt-1 border-t border-zinc-100 dark:border-zinc-800">
-                <span className="rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 mt-2">{SOURCE_LABEL[selected.source]}</span>
+                <span className="rounded-full bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 mt-2">{selected.levelLabel ?? SOURCE_LABEL[selected.source]}</span>
                 <span className="mt-2">
                   {selected.reps != null && selected.reps > 0
                     ? `${selected.interval ?? 0}d interval · ${selected.reps} review${selected.reps === 1 ? "" : "s"}`
@@ -203,7 +211,7 @@ export default function MandarinSearch({
                         <span className="text-zinc-400 dark:text-zinc-500 text-xs">{r.back}</span>
                       </p>
                     </div>
-                    <span className="text-[10px] shrink-0 text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">{SOURCE_LABEL[r.source]}</span>
+                    <span className="text-[10px] shrink-0 text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">{r.levelLabel ?? SOURCE_LABEL[r.source]}</span>
                   </button>
                 </li>
               ))}
