@@ -177,9 +177,14 @@ export default function MandarinSearch({
               <div className="flex items-start gap-3">
                 <span className="text-3xl leading-none shrink-0">{selected.front}</span>
                 <div className="min-w-0">
-                  {selected.sub && <p className="text-sm text-emerald-700 dark:text-emerald-500">{selected.sub}</p>}
+                  {selected.sub &&
+                    selected.sub.split("/").map((pron, i) => (
+                      <p key={i} className="text-sm text-emerald-700 dark:text-emerald-500">
+                        {pron.trim()}
+                      </p>
+                    ))}
                   {selected.back && (
-                    <p className="text-sm text-zinc-700 dark:text-zinc-300 mt-0.5 whitespace-pre-line">{selected.back}</p>
+                    <p className="text-sm text-zinc-700 dark:text-zinc-300 mt-1 whitespace-pre-line">{selected.back}</p>
                   )}
                 </div>
               </div>
