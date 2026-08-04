@@ -176,19 +176,21 @@ export default function MandarinSearch({
               </button>
               <div className="flex items-start gap-3">
                 <span className="text-3xl leading-none shrink-0">{selected.front}</span>
-                <div className="min-w-0">
-                  {selected.sub &&
-                    selected.sub.split("/").map((pron, i) => (
-                      <p key={i} className="text-sm text-emerald-700 dark:text-emerald-500">
-                        {pron.trim()}
+                <div className="min-w-0 space-y-1">
+                  {(() => {
+                    const prons = selected.sub ? selected.sub.split("/").map((s) => s.trim()) : [];
+                    const meanings = selected.back
+                      ? selected.back.split("/").map((s) => s.replace(/[()]/g, "").trim())
+                      : [];
+                    const rows = Math.max(prons.length, meanings.length);
+                    return Array.from({ length: rows }, (_, i) => (
+                      <p key={i} className="text-sm">
+                        {prons[i] && <span className="text-emerald-700 dark:text-emerald-500">{prons[i]}</span>}
+                        {prons[i] && meanings[i] && " "}
+                        {meanings[i] && <span className="text-zinc-700 dark:text-zinc-300">{meanings[i]}</span>}
                       </p>
-                    ))}
-                  {selected.back &&
-                    selected.back.split("/").map((meaning, i) => (
-                      <p key={i} className="text-sm text-zinc-700 dark:text-zinc-300 mt-1 whitespace-pre-line">
-                        {meaning.trim()}
-                      </p>
-                    ))}
+                    ));
+                  })()}
                 </div>
               </div>
               <div className="flex items-center gap-2 text-xs text-zinc-400 dark:text-zinc-500 pt-1 border-t border-zinc-100 dark:border-zinc-800">
