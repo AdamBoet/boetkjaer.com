@@ -1,20 +1,132 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import CharacterGrid, { LegendSwatches, type HanziCard } from "./CharacterGrid";
 import FormulaInfo from "./FormulaInfo";
 import { MasteryCard, LEVELS, type Hsk3Coverage } from "./Hsk3Grid";
+import { loadNewCards } from "./FlashcardTab";
 
-type Stats = {
-  learnedCount: number;
-  updatedAt: string;
-};
+const DEFAULT_YEARLY_GOAL = 1500;
+const YEARLY_GOAL_KEY = "hanzi_yearly_goal";
+
+function loadYearlyGoal(): number {
+  if (typeof window === "undefined") return DEFAULT_YEARLY_GOAL;
+  const n = parseInt(localStorage.getItem(YEARLY_GOAL_KEY) ?? "", 10);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_YEARLY_GOAL;
+}
 
 // Rank-ordered, cumulative-% frequency of each character across a modern
 // Chinese corpus (Jun Da's frequency list, ~9,933 characters, 193M-char
 // corpus). Static reference data — never changes, so it's fetched once
 // from a bundled public asset rather than synced from anywhere.
 type FreqEntry = { c: string; p: number };
+
+// Diminishing-returns curve: cumulative % of written Chinese covered by the
+// top-N most frequent characters, on a LINEAR rank axis — a log axis puts
+// "top 100 characters" at the visual midpoint of the chart (since there are
+// ~9,933 total), which flattens exactly the region that matters most and
+// makes the highest-value characters look unimpactful. Linear gives the
+// familiar steep-then-flat curve that actually matches the numbers (42% at
+// 100, 89% at 1,000, 99% at 3,000). A dot marks the rank-equivalent
+// position of the user's own (non-contiguous) coverage percentage.
+function SaturationCurve({ freq, valuePct }: { freq: FreqEntry[]; valuePct: number | null }) {
+  const width = 400;
+  const height = 130;
+  const pad = { top: 6, right: 8, bottom: 18, left: 24 };
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+  const n = freq.length;
+  // Cap the visible axis at 5k — virtually all curve movement happens well
+  // before that, so showing the full ~9,933 range wastes half the chart on
+  // a flat tail.
+  const xMax = Math.min(5000, n);
+
+  const xScale = (rank: number) => pad.left + (rank / xMax) * innerW;
+  const yScale = (pct: number) => pad.top + innerH - (pct / 100) * innerH;
+
+  // Sample ranks are bunched toward the low end (cubic easing) so the steep
+  // early climb stays smooth, even though the x position itself is linear.
+  const sampleCount = 150;
+  const points: string[] = [];
+  for (let i = 0; i < sampleCount; i++) {
+    const t = i / (sampleCount - 1);
+    const rank = Math.max(1, Math.round(1 + (xMax - 1) * t ** 3));
+    const entry = freq[rank - 1];
+    if (entry) points.push(`${i === 0 ? "M" : "L"}${xScale(rank).toFixed(1)},${yScale(entry.p).toFixed(1)}`);
+  }
+  const pathD = points.join(" ");
+
+  let dot: { x: number; y: number; rank: number } | null = null;
+  if (valuePct != null) {
+    const idx = freq.findIndex((f) => f.p >= valuePct);
+    const rank = idx === -1 ? n : idx + 1;
+    dot = { x: xScale(Math.min(rank, xMax)), y: yScale(valuePct), rank };
+  }
+
+  const yTicks = [0, 25, 50, 75, 100];
+  const xTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round((f * xMax) / 100) * 100);
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto overflow-visible">
+      {yTicks.map((t) => (
+        <line
+          key={t}
+          x1={pad.left}
+          x2={width - pad.right}
+          y1={yScale(t)}
+          y2={yScale(t)}
+          className="stroke-zinc-100 dark:stroke-zinc-800"
+          strokeWidth={1}
+        />
+      ))}
+      <path d={pathD} fill="none" className="stroke-zinc-400 dark:stroke-zinc-500" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      {dot && (
+        <>
+          <line x1={dot.x} x2={dot.x} y1={yScale(0)} y2={dot.y} className="stroke-emerald-600 dark:stroke-emerald-500" strokeWidth={1} strokeDasharray="2 3" />
+          <line x1={pad.left} x2={dot.x} y1={dot.y} y2={dot.y} className="stroke-emerald-600 dark:stroke-emerald-500" strokeWidth={1} strokeDasharray="2 3" />
+          <circle cx={dot.x} cy={dot.y} r={4} className="fill-emerald-600 dark:fill-emerald-500" />
+          <text x={pad.left - 4} y={dot.y + 3} textAnchor="end" className="fill-emerald-700 dark:fill-emerald-400 font-semibold" style={{ fontSize: 9 }}>
+            {valuePct!.toFixed(1)}%
+          </text>
+          <text x={dot.x} y={height - 4} textAnchor="middle" className="fill-emerald-700 dark:fill-emerald-400 font-semibold" style={{ fontSize: 9 }}>
+            {dot.rank.toLocaleString("da-DK")}
+          </text>
+        </>
+      )}
+      {yTicks.map((t) => (
+        <text
+          key={t}
+          x={pad.left - 4}
+          y={yScale(t) + 3}
+          textAnchor="end"
+          className="fill-zinc-400 dark:fill-zinc-500"
+          style={{ fontSize: 9 }}
+        >
+          {t}%
+        </text>
+      ))}
+      {xTicks.map((rank) => (
+        <text
+          key={rank}
+          x={xScale(rank)}
+          y={height - 4}
+          textAnchor="middle"
+          className="fill-zinc-400 dark:fill-zinc-500"
+          style={{ fontSize: 9 }}
+        >
+          {rank >= 1000 ? `${Math.round(rank / 1000)}k` : rank}
+        </text>
+      ))}
+    </svg>
+  );
+}
+
+type Stats = {
+  learnedCount: number;
+  updatedAt: string;
+  dayOfYear: number;
+  daysInYear: number;
+};
 
 export default function HanziTab({
   cards,
@@ -28,6 +140,12 @@ export default function HanziTab({
   isDark: boolean;
 }) {
   const [sub, setSub] = useState<"overview" | "characters">("overview");
+  const [yearlyGoal, setYearlyGoal] = useState(DEFAULT_YEARLY_GOAL);
+  const [cardsPerDay, setCardsPerDay] = useState(loadNewCards("hanzi"));
+  useEffect(() => {
+    setYearlyGoal(loadYearlyGoal());
+    setCardsPerDay(loadNewCards("hanzi"));
+  }, []);
   const [freq, setFreq] = useState<FreqEntry[] | null>(null);
   useEffect(() => {
     fetch("/char-frequency.json")
@@ -36,7 +154,7 @@ export default function HanziTab({
       .catch(() => setFreq(null));
   }, []);
 
-  const { learnedCount, updatedAt } = stats;
+  const { learnedCount, updatedAt, dayOfYear, daysInYear } = stats;
   const updatedStr = new Date(updatedAt).toLocaleString("en-GB", {
     day: "numeric",
     month: "short",
@@ -66,10 +184,26 @@ export default function HanziTab({
   const hanziMastery =
     scoredCards.length === 0 ? 0 : Math.round((1 - scoredCards.reduce((sum, c) => sum + c.raw, 0) / scoredCards.length) * 100);
 
+  const goalPct = Math.round(Math.min(learnedCount / yearlyGoal, 1) * 100);
+  const remaining = Math.max(yearlyGoal - learnedCount, 0);
+  const yearPct = Math.round((dayOfYear / daysInYear) * 100);
+
+  const expectedByNow = dayOfYear * cardsPerDay;
+  const cardDelta = learnedCount - expectedByNow;
+  const daysDelta = Math.round(Math.abs(cardDelta) / cardsPerDay);
+
+  const daysLeftInYear = daysInYear - dayOfYear;
+  const daysNeeded = Math.ceil(remaining / cardsPerDay);
+  const daysCanSkip = Math.max(0, daysLeftInYear - daysNeeded);
+  const daysToCatchup = Math.max(
+    0,
+    Math.ceil((yearlyGoal * dayOfYear - daysInYear * learnedCount) / (cardsPerDay * daysInYear - yearlyGoal))
+  );
+
   // "Unlocked" = every character in the word is one you've learned in the
   // Hanzi deck, even if you've never studied that word directly.
   const allHsk3Words = Object.values(hsk3Coverage.levels).flat();
-  const knownCharSet = new Set(cards.map((c) => c.character));
+  const knownCharSet = new Set(cards.filter((c) => (c.reps ?? 0) > 0).map((c) => c.character));
   const uniqueHskWords = Array.from(new Map(allHsk3Words.map((w) => [w.word, w])).values());
   const unlockedWords = uniqueHskWords.filter((w) => Array.from(w.word).every((ch) => knownCharSet.has(ch)));
   const unlockPct = uniqueHskWords.length > 0 ? Math.round((100 * unlockedWords.length) / uniqueHskWords.length) : 0;
@@ -97,11 +231,6 @@ export default function HanziTab({
     readPct = sum;
   }
 
-  const freqBenchmarks = [100, 500, 1000, 2000, 3000].map((n) => ({
-    n,
-    pct: freq && freq[n - 1] ? Math.round(freq[n - 1].p) : null,
-  }));
-
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1">
@@ -122,28 +251,77 @@ export default function HanziTab({
 
       {sub === "overview" ? (
         <div className="space-y-3">
-          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-6 flex flex-col items-center justify-center gap-1.5">
-            <span className="text-4xl font-bold tabular-nums">{learnedCount.toLocaleString("da-DK")}</span>
-            <span className="text-sm text-zinc-400 dark:text-zinc-500">characters known</span>
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-6">
+            <div className="flex flex-col items-center gap-1.5 text-center">
+              <div className="flex items-end justify-center gap-1">
+                <span className="text-4xl sm:text-5xl font-bold tabular-nums">{learnedCount.toLocaleString("da-DK")}</span>
+                <span className="pb-0.5 text-zinc-400 dark:text-zinc-500 text-xs">/ {yearlyGoal.toLocaleString("da-DK")}</span>
+              </div>
+              <div className="w-full max-w-sm space-y-1.5">
+                <div className="h-4 w-full rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden relative">
+                  <div
+                    className="absolute inset-y-0 left-0 bg-red-400"
+                    style={{ width: `${yearPct}%`, backgroundImage: "repeating-linear-gradient(-45deg, transparent, transparent 5px, rgba(255,255,255,0.3) 5px, rgba(255,255,255,0.3) 10px)" }}
+                  />
+                  <div
+                    className="absolute inset-y-0 left-0 bg-emerald-700"
+                    style={{ width: `${goalPct}%`, backgroundImage: "repeating-linear-gradient(-45deg, transparent, transparent 5px, rgba(255,255,255,0.3) 5px, rgba(255,255,255,0.3) 10px)" }}
+                  />
+                </div>
+                <div className="flex items-center justify-center gap-3 text-xs">
+                  <span className="text-emerald-700 dark:text-emerald-600 font-medium">{goalPct}%</span>
+                  <span className="text-zinc-400 dark:text-zinc-500 font-medium">{yearPct}% year</span>
+                </div>
+              </div>
+            </div>
           </div>
+
+          <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-6 space-y-4">
+            <div className="flex flex-col items-center gap-2 text-sm text-center">
+              <p>
+                <span className={`font-bold ${cardDelta < 0 ? "text-red-500" : ""}`}>{daysDelta} days</span>
+                {" skipped"}
+              </p>
+              <p className="text-zinc-500 dark:text-zinc-400">
+                {"skip no more than "}
+                <span className={`font-bold ${daysCanSkip <= 0 ? "text-red-500" : "text-zinc-700 dark:text-zinc-200"}`}>{daysCanSkip} days</span>
+              </p>
+              <p className="text-zinc-500 dark:text-zinc-400">
+                {daysToCatchup > 0 ? (
+                  <>
+                    {"stay consistent for "}
+                    <span className="font-bold text-amber-500">{daysToCatchup} days</span>
+                    {" to catch up"}
+                  </>
+                ) : (
+                  <>you&apos;re on pace</>
+                )}
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+              <label className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                Yearly goal
+                <input
+                  type="number"
+                  min={1}
+                  value={yearlyGoal}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value, 10) || 1;
+                    setYearlyGoal(v);
+                    localStorage.setItem(YEARLY_GOAL_KEY, String(v));
+                  }}
+                  className="w-20 rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-1.5 py-1 text-xs tabular-nums text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+                />
+              </label>
+            </div>
+          </div>
+
           <div className="flex flex-col sm:flex-row gap-3 items-stretch">
             <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-5 flex flex-col gap-1.5 flex-1">
               <p className="text-xs text-zinc-400 dark:text-zinc-500">
                 You can read <span className="text-sm font-bold text-zinc-700 dark:text-zinc-200 tabular-nums">{readPct != null ? `${readPct.toFixed(1)}%` : "—"}</span> of Chinese text
               </p>
-
-              <div className="border-t border-zinc-100 dark:border-zinc-800 pt-3 space-y-1.5">
-                <div className="grid grid-cols-2 text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
-                  <span>How many you know</span>
-                  <span className="text-right">Readable</span>
-                </div>
-                {freqBenchmarks.map(({ n, pct }) => (
-                  <div key={n} className="grid grid-cols-2 text-xs text-zinc-600 dark:text-zinc-300">
-                    <span>Top {n.toLocaleString("da-DK")}</span>
-                    <span className="text-right tabular-nums">{pct != null ? `~${pct}%` : "—"}</span>
-                  </div>
-                ))}
-              </div>
+              {freq && <SaturationCurve freq={freq} valuePct={readPct} />}
             </div>
             <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-5 flex flex-col gap-1.5 flex-1">
               <p className="text-xs text-zinc-400 dark:text-zinc-500">

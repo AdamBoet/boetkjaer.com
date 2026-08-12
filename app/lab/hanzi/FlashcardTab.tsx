@@ -11,6 +11,10 @@ export interface WordPhrase {
   word: string;
   pinyin: string | null;
   meaning: string | null;
+  example?: string | null;
+  example_pinyin?: string | null;
+  example_meaning?: string | null;
+  picture_url?: string | null;
   interval?: number;
   reps?: number;
   lapses?: number;
@@ -22,13 +26,14 @@ export interface WordPhrase {
   mod?: number | null;
 }
 
-type DeckKey = "hanzi" | "hsk3" | "wp";
-type AnyCard = HanziCard | Hsk3Word | WordPhrase;
+export type DeckKey = "hanzi" | "hsk3" | "random_words" | "idioms";
+export type AnyCard = HanziCard | Hsk3Word | WordPhrase;
 
-const DECK_LABELS: Record<DeckKey, string> = {
+export const DECK_LABELS: Record<DeckKey, string> = {
   hanzi: "汉字 writing",
-  hsk3: "HSK 1-6 vocabulary",
-  wp: "Words and phrases",
+  hsk3: "HSK 3.0",
+  random_words: "Random words",
+  idioms: "中文的谚语/成语",
 };
 
 const DEFAULT_MAX_REVIEWS = 9999;
@@ -49,14 +54,14 @@ function loadMaxReviews(deck: DeckKey): number {
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_REVIEWS;
 }
 
-function loadNewCards(deck: DeckKey): number {
+export function loadNewCards(deck: DeckKey): number {
   if (typeof window === "undefined") return DEFAULT_NEW_CARDS;
   const stored = localStorage.getItem(newCardsKey(deck));
   const n = stored ? parseInt(stored, 10) : NaN;
   return Number.isFinite(n) && n >= 0 ? n : DEFAULT_NEW_CARDS;
 }
 
-interface DueCard {
+export interface DueCard {
   id: string;
   dbId: number | string; // note_id (hanzi) or word (hsk3) — the actual DB key
   source: DeckKey;
@@ -72,6 +77,15 @@ interface DueCard {
   type: number; // 0=new, 1=learning, 2=review, 3=relearning — Anki's own convention
   learningStep: number | null; // index into LEARNING_STEPS_MIN/RELEARNING_STEPS_MIN
   due: number | null; // epoch seconds; only meaningful while type is 1 or 3
+  components?: string; // hanzi only — radical breakdown
+  examples?: string; // hanzi only — usage examples per pronunciation
+  sentence?: string; // hsk3 only — example sentence
+  sentencePinyin?: string;
+  sentenceMeaning?: string;
+  audioUrl?: string | null; // word/character pronunciation
+  sentenceAudioUrl?: string | null; // hsk3 only
+  pictureUrl?: string | null; // hanzi + wp only
+  rank?: number; // hanzi only — frequency rank (lower = more common)
 }
 
 type Grade = "again" | "hard" | "good" | "easy";
@@ -174,10 +188,10 @@ function scheduleCard(
   }
 }
 
-function formatInterval(days: number): string {
+export function formatInterval(days: number): string {
   if (days <= 0) return "<10m";
   if (days < 30) return `${days}d`;
-  if (days < 365) return `${Math.round(days / 30)}mo`;
+  if (days < 365) return `${(days / 30).toFixed(1)}mo`;
   return `${(days / 365).toFixed(1)}y`;
 }
 
@@ -192,7 +206,7 @@ function previewLabel(card: { interval: number; factor: number; reps: number; ty
   return result.dueInMin != null ? formatMinutes(result.dueInMin) : formatInterval(result.interval);
 }
 
-async function gradeCard(source: DeckKey, dbId: number | string, updates: Record<string, unknown>) {
+export async function gradeCard(source: DeckKey, dbId: number | string, updates: Record<string, unknown>) {
   const res = await fetch("/api/grade-card", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -202,6 +216,62 @@ async function gradeCard(source: DeckKey, dbId: number | string, updates: Record
     const { error } = await res.json();
     throw new Error(error ?? "Failed to save grade");
   }
+}
+
+const GRADE_TO_EASE: Record<Grade, number> = { again: 1, hard: 2, good: 3, easy: 4 };
+const MAX_LOGGED_TIME_MS = 60000; // matches Anki's own revlog cap
+
+// Logs a single review to review_log — this is what makes reviews graded
+// directly on the site (not just ones synced in from Anki) show up in the
+// Statistics tab's calendar/hourly/answer-button charts. Fire-and-forget:
+// a failure here shouldn't block grading, since the scheduling update
+// (gradeCard above) is the part that actually matters for what card you
+// see next.
+function logReview(
+  card: { source: DeckKey; dbId: number | string; interval: number; reps: number; type: number },
+  grade: Grade,
+  result: { interval: number; factor: number },
+  shownAt: number
+): number {
+  const isNewCard = (card.reps ?? 0) === 0;
+  const isLearningPhase = !isNewCard && card.type === 1;
+  const isRelearningPhase = !isNewCard && card.type === 3;
+  const reviewType = isNewCard || isLearningPhase ? 0 : isRelearningPhase ? 2 : 1;
+  const now = Date.now();
+
+  fetch("/api/review-log-sync", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      rows: [
+        {
+          source: card.source,
+          db_id: String(card.dbId),
+          review_id: now,
+          ease: GRADE_TO_EASE[grade],
+          interval: result.interval,
+          last_interval: card.interval,
+          factor: result.factor,
+          time_taken_ms: Math.min(MAX_LOGGED_TIME_MS, now - shownAt),
+          review_type: reviewType,
+          reviewed_at: new Date(now).toISOString(),
+        },
+      ],
+    }),
+  }).catch(() => {});
+
+  return now; // the review_id, so an undo can delete this exact row
+}
+
+// Undo needs to remove the review_log row logReview just wrote, not just
+// revert the card's scheduling — otherwise a card you un-grade still shows
+// up in the Statistics charts as if you'd actually reviewed it.
+function deleteReviewLog(source: DeckKey, dbId: number | string, reviewId: number) {
+  fetch("/api/review-log-sync", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source, db_id: String(dbId), review_id: reviewId }),
+  }).catch(() => {});
 }
 
 interface DeckCounts {
@@ -223,7 +293,7 @@ function isDueForReview(reps: number | undefined, dueDiff: number | null) {
 }
 
 // In Anki's own state model: type 1 = learning, type 3 = relearning.
-function isLearning(type: number | undefined) {
+export function isLearning(type: number | undefined) {
   return type === 1 || type === 3;
 }
 
@@ -233,11 +303,11 @@ function isLearningCardDue(due: number | null | undefined) {
   return due != null && due <= Math.floor(Date.now() / 1000);
 }
 
-function isNeverStudied(reps: number | undefined) {
+export function isNeverStudied(reps: number | undefined) {
   return (reps ?? 0) === 0;
 }
 
-function toDueCard(key: DeckKey, card: AnyCard, dueDiff: number | null, isNew: boolean): DueCard {
+export function toDueCard(key: DeckKey, card: AnyCard, dueDiff: number | null, isNew: boolean): DueCard {
   const stats = {
     interval: card.interval ?? 0,
     factor: card.factor ?? DEFAULT_FACTOR,
@@ -249,14 +319,25 @@ function toDueCard(key: DeckKey, card: AnyCard, dueDiff: number | null, isNew: b
   };
   if (key === "hanzi") {
     const c = card as HanziCard;
-    return { id: `hanzi-${c.note_id}`, dbId: c.note_id, source: "hanzi", front: c.character, sub: c.pronunciation, back: c.front, dueDiff, isNew, ...stats };
+    return {
+      id: `hanzi-${c.note_id}`, dbId: c.note_id, source: "hanzi", front: c.character, sub: c.pronunciation, back: c.front, dueDiff, isNew, ...stats,
+      components: c.components, examples: c.examples, audioUrl: c.audio_url, pictureUrl: c.picture_url, rank: c.rank,
+    };
   }
   if (key === "hsk3") {
     const w = card as Hsk3Word;
-    return { id: `hsk3-${w.word}`, dbId: w.word, source: "hsk3", front: w.word, sub: w.pinyin ?? "", back: w.meaning ?? "", dueDiff, isNew, ...stats };
+    return {
+      id: `hsk3-${w.word}`, dbId: w.word, source: "hsk3", front: w.word, sub: w.pinyin ?? "", back: w.meaning ?? "", dueDiff, isNew, ...stats,
+      sentence: w.sentence, sentencePinyin: w.sentence_pinyin, sentenceMeaning: w.sentence_meaning,
+      audioUrl: w.audio_url, sentenceAudioUrl: w.sentence_audio_url,
+    };
   }
   const p = card as WordPhrase;
-  return { id: `wp-${p.note_id}`, dbId: p.note_id, source: "wp", front: p.word, sub: p.pinyin ?? "", back: p.meaning ?? "", dueDiff, isNew, ...stats };
+  return {
+    id: `wp-${p.note_id}`, dbId: p.note_id, source: p.source, front: p.word, sub: p.pinyin ?? "", back: p.meaning ?? "", dueDiff, isNew, ...stats,
+    sentence: p.example ?? undefined, sentencePinyin: p.example_pinyin ?? undefined, sentenceMeaning: p.example_meaning ?? undefined,
+    pictureUrl: p.picture_url,
+  };
 }
 
 function shuffle<T>(arr: T[]): T[] {
@@ -301,7 +382,7 @@ function buildQueue(
 // Counts shown in the deck menu — computed from our own data, not Anki.
 // New/Due are capped by the same session settings the review queue itself
 // uses, so the numbers shown are exactly what pressing into the deck yields.
-function countDeck(key: DeckKey, items: AnyCard[]): DeckCounts {
+function countDeck(key: DeckKey, items: AnyCard[], mounted: boolean): DeckCounts {
   let newCount = 0, learnCount = 0, dueCount = 0;
   for (const item of items) {
     const diff = dueDiffFrom(item);
@@ -309,12 +390,16 @@ function countDeck(key: DeckKey, items: AnyCard[]): DeckCounts {
     else if (isLearning(item.type)) learnCount++;
     else if (isDueForReview(item.reps, diff)) dueCount++;
   }
+  // Session-limit caps come from localStorage, which isn't available during
+  // SSR/the initial client render — using it unconditionally here would make
+  // that first render disagree with the server and trigger a hydration
+  // mismatch. Fall back to the same defaults the server sees until mounted.
   return {
     key,
     label: DECK_LABELS[key],
-    newCount: Math.min(newCount, loadNewCards(key)),
+    newCount: Math.min(newCount, mounted ? loadNewCards(key) : DEFAULT_NEW_CARDS),
     learnCount,
-    dueCount: Math.min(dueCount, loadMaxReviews(key)),
+    dueCount: Math.min(dueCount, mounted ? loadMaxReviews(key) : DEFAULT_MAX_REVIEWS),
   };
 }
 
@@ -415,8 +500,8 @@ function DeckMenu({
   );
 
   return (
-    <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none overflow-hidden max-w-xl">
-      <div className="grid grid-cols-[1fr_56px_56px_56px_28px] items-center gap-2 px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950/40 border-b border-zinc-200 dark:border-zinc-800">
+    <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none overflow-hidden">
+      <div className="grid grid-cols-[minmax(240px,auto)_68px_68px_68px_32px] items-center gap-3 px-5 py-3.5 bg-zinc-50 dark:bg-zinc-950/40 border-b border-zinc-200 dark:border-zinc-800">
         <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Deck</span>
         <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100 text-center">New</span>
         <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100 text-center">Learn</span>
@@ -425,7 +510,7 @@ function DeckMenu({
       </div>
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="w-full grid grid-cols-[1fr_56px_56px_56px_28px] items-center gap-2 px-4 py-2.5 text-xs font-semibold text-zinc-400 dark:text-zinc-500 border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 transition-colors"
+        className="w-full grid grid-cols-[minmax(240px,auto)_68px_68px_68px_32px] items-center gap-3 px-5 py-3.5 text-xs font-semibold text-zinc-400 dark:text-zinc-500 border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 transition-colors"
       >
         <span className="flex items-center gap-1.5">
           <svg
@@ -447,11 +532,11 @@ function DeckMenu({
         const total = d.newCount + d.learnCount + d.dueCount;
         return (
           <div key={d.key} className="relative border-b border-zinc-100 dark:border-zinc-800 last:border-b-0 group">
-            <div className="w-full grid grid-cols-[1fr_56px_56px_56px_28px] items-center gap-2 px-4 py-3 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
+            <div className="w-full grid grid-cols-[minmax(240px,auto)_68px_68px_68px_32px] items-center gap-3 px-5 py-3.5 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
               <button
                 onClick={() => onSelect(d.key)}
                 disabled={total === 0}
-                className="text-left text-sm text-zinc-800 dark:text-zinc-100 disabled:cursor-default disabled:opacity-60 hover:underline"
+                className="pl-[18px] text-left text-sm text-zinc-800 dark:text-zinc-100 disabled:cursor-default disabled:opacity-60 hover:underline"
               >
                 {d.label}
               </button>
@@ -561,11 +646,110 @@ function HotkeysPanel() {
   );
 }
 
-function EditPanel({ card, onClose, onSave }: { card: DueCard; onClose: () => void; onSave: (front: string, sub: string, back: string) => void }) {
+// A single shared <audio> element for all playback (manual button clicks and
+// the reveal autoplay chain) — starting any new clip always takes over this
+// same element, so a fresh play always cuts off whatever was already
+// playing instead of overlapping it.
+let sharedAudio: HTMLAudioElement | null = null;
+
+function playAudio(src: string, onEnded?: () => void) {
+  if (!sharedAudio) sharedAudio = new Audio();
+  sharedAudio.pause();
+  sharedAudio.onended = onEnded ?? null;
+  sharedAudio.src = src;
+  sharedAudio.currentTime = 0;
+  sharedAudio.play().catch(() => {});
+}
+
+function playAudioSequence(urls: string[]) {
+  let i = 0;
+  function next() {
+    if (i >= urls.length) return;
+    playAudio(urls[i++], next);
+  }
+  next();
+}
+
+export function AudioButton({ src, label }: { src?: string | null; label: string }) {
+  if (!src) return null;
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        playAudio(src);
+      }}
+      aria-label={label}
+      className="inline-flex items-center justify-center w-6 h-6 shrink-0 rounded-full border border-zinc-300 dark:border-zinc-600 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3 ml-0.5">
+        <path d="M6.3 2.841A1.5 1.5 0 004 4.11v11.78a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+      </svg>
+    </button>
+  );
+}
+
+export function EditPanel({
+  card,
+  onClose,
+  onSave,
+  onPictureUpdated,
+}: {
+  card: DueCard;
+  onClose: () => void;
+  onSave: (front: string, sub: string, back: string) => void;
+  onPictureUpdated: (url: string | null) => void;
+}) {
   const [front, setFront] = useState(card.front);
   const [sub, setSub] = useState(card.sub);
   const [back, setBack] = useState(card.back);
+  const [pictureUrl, setPictureUrl] = useState(card.pictureUrl ?? null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+
+  async function uploadPicture(file: File) {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const contentBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve((reader.result as string).split(",")[1]);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+      const filename = file.name || `pasted.${(file.type.split("/")[1] || "png")}`;
+      const res = await fetch("/api/upload-media", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: card.source, id: card.dbId, filename, contentType: file.type, contentBase64 }),
+      });
+      if (!res.ok) {
+        const { error } = await res.json();
+        throw new Error(error ?? "Upload failed");
+      }
+      const { url } = await res.json();
+      setPictureUrl(url);
+      onPictureUpdated(url);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function removePicture() {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      await gradeCard(card.source, card.dbId, { picture_url: null });
+      setPictureUrl(null);
+      onPictureUpdated(null);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Failed to remove picture");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -574,6 +758,21 @@ function EditPanel({ card, onClose, onSave }: { card: DueCard; onClose: () => vo
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [onClose]);
+
+  // Lets you paste a screenshot straight in with Cmd+V, matching Anki's own
+  // image-paste behavior, instead of requiring a file picker every time.
+  useEffect(() => {
+    function handlePaste(e: ClipboardEvent) {
+      const item = Array.from(e.clipboardData?.items ?? []).find((i) => i.type.startsWith("image/"));
+      if (!item) return;
+      e.preventDefault();
+      const file = item.getAsFile();
+      if (file) uploadPicture(file);
+    }
+    document.addEventListener("paste", handlePaste);
+    return () => document.removeEventListener("paste", handlePaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [card.source, card.dbId]);
 
   return (
     <div className="fixed inset-0 z-40 bg-black/20 flex items-center justify-center px-4" onClick={onClose}>
@@ -608,6 +807,27 @@ function EditPanel({ card, onClose, onSave }: { card: DueCard; onClose: () => vo
             className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
           />
         </label>
+        {card.source !== "hsk3" && (
+          <div className="space-y-1">
+            <span className="text-xs text-zinc-500">Picture</span>
+            {pictureUrl ? (
+              <div className="flex items-start gap-2">
+                <img src={pictureUrl} alt="" className="max-w-[160px] rounded-md border border-zinc-200 dark:border-zinc-700" />
+                <button
+                  onClick={removePicture}
+                  disabled={uploading}
+                  className="text-[11px] text-red-500 hover:text-red-600 disabled:opacity-50"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-zinc-400 dark:text-zinc-500">Paste an image (⌘V) to add a picture</p>
+            )}
+            {uploading && <p className="text-[11px] text-zinc-400">Uploading…</p>}
+            {uploadError && <p className="text-[11px] text-red-500">{uploadError}</p>}
+          </div>
+        )}
         <div className="flex gap-2 pt-1">
           <button
             onClick={onClose}
@@ -628,7 +848,7 @@ function EditPanel({ card, onClose, onSave }: { card: DueCard; onClose: () => vo
 }
 
 // Maps the unified front/sub/back shape back to each source's real columns.
-function buildEditUpdates(source: DeckKey, front: string, sub: string, back: string): Record<string, unknown> {
+export function buildEditUpdates(source: DeckKey, front: string, sub: string, back: string): Record<string, unknown> {
   if (source === "hanzi") return { character: front, pronunciation: sub, front: back };
   return { word: front, pinyin: sub, meaning: back };
 }
@@ -642,8 +862,33 @@ function ReviewSession({ initialQueue, onExit }: { initialQueue: DueCard[]; onEx
   const [revealed, setRevealed] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const lastActions = useRef<{ original: DueCard; graded: DueCard }[]>([]);
+  const lastActions = useRef<{ original: DueCard; graded: DueCard; reviewId: number }[]>([]);
   const current = queue[0];
+  // When the current card was first shown — used to log how long each
+  // review took, capped the same way Anki caps its own revlog (60s) so a
+  // card left open in a background tab doesn't skew the "s/card" stat.
+  const shownAtRef = useRef(Date.now());
+  useEffect(() => {
+    shownAtRef.current = Date.now();
+  }, [current?.id]);
+
+  useEffect(() => {
+    if (!revealed) return;
+    // Word audio, then sentence audio — chained through the shared audio
+    // element so it never overlaps a manual button press either.
+    const urls = [current?.audioUrl, current?.sentenceAudioUrl].filter((u): u is string => !!u);
+    if (urls.length > 0) playAudioSequence(urls);
+
+    return () => {
+      if (sharedAudio) {
+        sharedAudio.pause();
+        sharedAudio.onended = null;
+      }
+    };
+    // Only fire when the card is actually turned, not on every re-render
+    // while it stays revealed (e.g. after an undo restores the same card).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealed, current?.id]);
 
   const grade = useRef<(g: Grade) => void>(() => {});
   grade.current = (g: Grade) => {
@@ -668,6 +913,7 @@ function ReviewSession({ initialQueue, onExit }: { initialQueue: DueCard[]; onEx
     }).catch((e) => {
       setSaveError(e instanceof Error ? e.message : "Failed to save — check your connection.");
     });
+    const reviewId = logReview(card, g, result, shownAtRef.current);
 
     const rest = queue.slice(1);
     const updatedCard: DueCard = {
@@ -682,7 +928,7 @@ function ReviewSession({ initialQueue, onExit }: { initialQueue: DueCard[]; onEx
       due,
       dueDiff: result.dueInMin != null ? null : result.interval <= 0 ? 0 : result.interval,
     };
-    lastActions.current = [...lastActions.current, { original: card, graded: updatedCard }];
+    lastActions.current = [...lastActions.current, { original: card, graded: updatedCard, reviewId }];
 
     if (result.dueInMin != null) {
       // Still learning/relearning — holds off the visible queue until its
@@ -713,6 +959,7 @@ function ReviewSession({ initialQueue, onExit }: { initialQueue: DueCard[]; onEx
     }).catch((e) => {
       setSaveError(e instanceof Error ? e.message : "Failed to undo — check your connection.");
     });
+    deleteReviewLog(action.original.source, action.original.dbId, action.reviewId);
     setQueue((q) => [action.original, ...q.filter((c) => c.id !== action.graded.id)]);
     setPending((p) => p.filter((x) => x.card.id !== action.graded.id));
     lastActions.current = stack.slice(0, -1);
@@ -805,11 +1052,39 @@ function ReviewSession({ initialQueue, onExit }: { initialQueue: DueCard[]; onEx
           <div className="max-w-xl">
             <p className="text-3xl">{current.front}</p>
 
+            {!revealed && current.sentence && current.source !== "hanzi" && (
+              <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800 text-left">
+                <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.sentence}</p>
+              </div>
+            )}
+
             {revealed && (
-              <div className="mt-8 space-y-2 border-t border-zinc-200 dark:border-zinc-800 pt-6">
-                {current.sub && <p className="text-lg text-emerald-700 dark:text-emerald-500">{current.sub}</p>}
-                {current.back && (
-                  <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.back}</p>
+              <div className="mt-8 space-y-1.5 text-left">
+                <p className="text-sm flex items-center gap-2 flex-wrap">
+                  {current.sub && <span className="text-emerald-700 dark:text-emerald-500">{current.sub}</span>}
+                  {current.back && <span className="text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.back}</span>}
+                  <AudioButton src={current.audioUrl} label="Play pronunciation" />
+                </p>
+                {current.components && (
+                  <p className="text-xs text-zinc-400 dark:text-zinc-500">{current.components}</p>
+                )}
+                {current.examples && (
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 whitespace-pre-line">{current.examples}</p>
+                )}
+                {current.sentence && (
+                  <div className="pt-4 mt-2 border-t border-zinc-200 dark:border-zinc-800 space-y-0.5">
+                    <p className="text-sm text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+                      <span>{current.sentence}</span>
+                      <AudioButton src={current.sentenceAudioUrl} label="Play sentence audio" />
+                    </p>
+                    {current.sentencePinyin && <p className="text-sm text-emerald-700 dark:text-emerald-500">{current.sentencePinyin}</p>}
+                    {current.sentenceMeaning && <p className="text-sm text-zinc-600 dark:text-zinc-400">{current.sentenceMeaning}</p>}
+                  </div>
+                )}
+                {current.pictureUrl && (
+                  <div className="flex justify-center pt-4">
+                    <img src={current.pictureUrl} alt="" className="max-w-[220px] rounded-lg border border-zinc-200 dark:border-zinc-800" />
+                  </div>
                 )}
               </div>
             )}
@@ -864,6 +1139,9 @@ function ReviewSession({ initialQueue, onExit }: { initialQueue: DueCard[]; onEx
             setQueue((q) => q.map((c) => (c.id === current.id ? { ...c, front, sub, back } : c)));
             setEditOpen(false);
           }}
+          onPictureUpdated={(url) => {
+            setQueue((q) => q.map((c) => (c.id === current.id ? { ...c, pictureUrl: url } : c)));
+          }}
         />
       )}
     </>
@@ -880,15 +1158,57 @@ export default function FlashcardTab({
   wordsPhrases: WordPhrase[];
 }) {
   const [selectedDeck, setSelectedDeck] = useState<DeckKey | null>(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  // Pulled from our own review_log table (the same store site-graded and
+  // Anki-synced reviews both write to) rather than AnkiConnect — this is
+  // meant to work whether or not Anki is even open.
+  const [todayStats, setTodayStats] = useState<{ count: number; minutes: number; secPerCard: number } | null>(null);
+  useEffect(() => {
+    // Re-fetches every time the deck menu becomes visible again (including
+    // right after finishing a review session, since selectedDeck going back
+    // to null re-runs this) — otherwise the count you just earned wouldn't
+    // show up until the whole tab remounted.
+    if (selectedDeck !== null) return;
+    // Scoped to today's local midnight onward — a revlog with months of
+    // history has no reason to be paged through in full just to answer a
+    // same-day question.
+    const sinceMidnight = new Date();
+    sinceMidnight.setHours(0, 0, 0, 0);
+    fetch(`/api/review-log?since=${encodeURIComponent(sinceMidnight.toISOString())}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.error || !Array.isArray(d.rows)) return;
+        const todayKey = new Date().toDateString();
+        const todays = (d.rows as { reviewed_at: string; time_taken_ms: number }[]).filter(
+          (r) => new Date(r.reviewed_at).toDateString() === todayKey
+        );
+        const timeMs = todays.reduce((s, r) => s + r.time_taken_ms, 0);
+        setTodayStats({
+          count: todays.length,
+          minutes: timeMs / 60000,
+          secPerCard: todays.length > 0 ? timeMs / todays.length / 1000 : 0,
+        });
+      })
+      .catch(() => {});
+  }, [selectedDeck]);
 
   const hsk3Known = useMemo(
     () => Object.values(hsk3Coverage.levels).flat().filter((w) => w.known),
     [hsk3Coverage]
   );
+  const randomWords = useMemo(() => wordsPhrases.filter((w) => w.source === "random_words"), [wordsPhrases]);
+  const idioms = useMemo(() => wordsPhrases.filter((w) => w.source === "idioms"), [wordsPhrases]);
 
   const decks = useMemo(
-    () => [countDeck("hanzi", cards), countDeck("hsk3", hsk3Known), countDeck("wp", wordsPhrases)],
-    [cards, hsk3Known, wordsPhrases]
+    () => [
+      countDeck("hanzi", cards, mounted),
+      countDeck("hsk3", hsk3Known, mounted),
+      countDeck("random_words", randomWords, mounted),
+      countDeck("idioms", idioms, mounted),
+    ],
+    [cards, hsk3Known, randomWords, idioms, mounted]
   );
 
   const queue = useMemo(() => {
@@ -898,12 +1218,25 @@ export default function FlashcardTab({
         ? cards.map((card) => ({ key: "hanzi" as const, card }))
         : selectedDeck === "hsk3"
         ? hsk3Known.map((card) => ({ key: "hsk3" as const, card }))
-        : wordsPhrases.map((card) => ({ key: "wp" as const, card }));
+        : selectedDeck === "random_words"
+        ? randomWords.map((card) => ({ key: "random_words" as const, card }))
+        : idioms.map((card) => ({ key: "idioms" as const, card }));
     return buildQueue(items, loadMaxReviews(selectedDeck), loadNewCards(selectedDeck));
-  }, [selectedDeck, cards, hsk3Known, wordsPhrases]);
+  }, [selectedDeck, cards, hsk3Known, randomWords, idioms]);
 
   if (!selectedDeck) {
-    return <DeckMenu decks={decks} onSelect={setSelectedDeck} />;
+    return (
+      <div className="flex flex-col items-center gap-3">
+        <DeckMenu decks={decks} onSelect={setSelectedDeck} />
+        {todayStats && todayStats.count > 0 && (
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            Studied <span className="font-semibold tabular-nums text-zinc-700 dark:text-zinc-200">{todayStats.count}</span> cards in{" "}
+            <span className="font-semibold tabular-nums text-zinc-700 dark:text-zinc-200">{todayStats.minutes.toFixed(1)}</span> minutes (
+            <span className="tabular-nums">{todayStats.secPerCard.toFixed(1)}s/card</span>)
+          </p>
+        )}
+      </div>
+    );
   }
 
   if (queue.length === 0) {

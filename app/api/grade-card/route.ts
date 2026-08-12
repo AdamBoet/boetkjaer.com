@@ -4,7 +4,8 @@ import { supabaseAdmin } from "@/lib/supabase-server";
 const TABLES = {
   hanzi: { table: "hanzi_cards", pk: "note_id" },
   hsk3: { table: "hsk3_words", pk: "word" },
-  wp: { table: "words_phrases", pk: "note_id" },
+  random_words: { table: "words_phrases", pk: "note_id" },
+  idioms: { table: "words_phrases", pk: "note_id" },
 } as const;
 
 export async function POST(req: NextRequest) {

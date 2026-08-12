@@ -6,13 +6,91 @@ import { type HanziCard } from "./CharacterGrid";
 import { cleanMeaning } from "./card-utils";
 import WritingPractice from "./WritingPractice";
 import Hsk3Grid, { type Hsk3Coverage } from "./Hsk3Grid";
-import MandarinOverview from "./MandarinOverview";
 import FlashcardTab, { type WordPhrase } from "./FlashcardTab";
 import HanziTab from "./HanziTab";
-import MandarinSearch from "./MandarinSearch";
+import BrowseTab from "./BrowseTab";
+import StatsTab from "./StatsTab";
 
 const YEARLY_GOAL = 1500;
 const CARDS_PER_DAY = 5;
+
+type AnkiReview = {
+  id: number; // epoch ms — also the review's timestamp
+  ease: number;
+  ivl: number;
+  lastIvl: number;
+  factor: number;
+  time: number; // ms taken to answer
+  type: number;
+};
+
+// Pulls Anki's actual per-review history (not just current card state) for
+// the Statistics tab's calendar/hourly/answer-button charts, and uploads it
+// to review_log. Runs after the per-deck cardsInfo sync, using the same
+// card IDs so review_log and hanzi_cards/hsk3_words never disagree on which
+// cards exist.
+async function syncReviewLog(
+  source: "hanzi" | "hsk3" | "random_words" | "idioms",
+  cardIds: number[],
+  cardIdToDbId: Map<number, string | number>,
+  effectiveUrl: string
+) {
+  if (cardIds.length === 0) return;
+  const rows: {
+    source: string;
+    db_id: string;
+    review_id: number;
+    ease: number;
+    interval: number;
+    last_interval: number;
+    factor: number;
+    time_taken_ms: number;
+    review_type: number;
+    reviewed_at: string;
+  }[] = [];
+
+  for (let i = 0; i < cardIds.length; i += 200) {
+    const batch = cardIds.slice(i, i + 200);
+    const reviewsByCard: Record<string, AnkiReview[]> = await ankiConnect(
+      "getReviewsOfCards",
+      { cards: batch },
+      effectiveUrl
+    );
+    for (const [cardIdStr, reviews] of Object.entries(reviewsByCard)) {
+      const cardId = parseInt(cardIdStr, 10);
+      const dbId = cardIdToDbId.get(cardId);
+      if (dbId == null) continue; // card wasn't part of a note we recognize — skip rather than guess
+      for (const r of reviews) {
+        rows.push({
+          source,
+          db_id: String(dbId),
+          review_id: r.id,
+          ease: r.ease,
+          interval: r.ivl,
+          last_interval: r.lastIvl,
+          factor: r.factor,
+          time_taken_ms: r.time,
+          review_type: r.type,
+          reviewed_at: new Date(r.id).toISOString(),
+        });
+      }
+    }
+  }
+
+  // Upload in chunks so a large first-time backfill (tens of thousands of
+  // reviews) doesn't go out as one giant request body.
+  for (let i = 0; i < rows.length; i += 5000) {
+    const res = await fetch("/api/review-log-sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rows: rows.slice(i, i + 5000) }),
+    });
+    if (!res.ok) {
+      const { error } = await res.json();
+      throw new Error(`Saved locally but failed to sync review history: ${error}`);
+    }
+  }
+}
 
 async function ankiConnect(
   action: string,
@@ -45,7 +123,7 @@ export default function HanziDashboard({
   initialStats,
   initialCards,
   hsk3Coverage: initialHsk3Coverage,
-  wordsPhrases,
+  wordsPhrases: initialWordsPhrases,
 }: {
   initialStats: Stats;
   initialCards: HanziCard[];
@@ -55,6 +133,7 @@ export default function HanziDashboard({
   const [stats, setStats] = useState(initialStats);
   const [cards, setCards] = useState(initialCards);
   const [hsk3Coverage, setHsk3Coverage] = useState(initialHsk3Coverage);
+  const [wordsPhrases, setWordsPhrases] = useState(initialWordsPhrases);
   const [loading, setLoading] = useState(false);
   const [synced, setSynced] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +141,7 @@ export default function HanziDashboard({
   const [ankiUrl, setAnkiUrl] = useState("http://localhost:8765");
   const [deckName, setDeckName] = useState("Mandarin::汉字 writing");
   const settingsRef = useRef<HTMLDivElement>(null);
-  const [tab, setTab] = useState<"dashboard" | "flashcards" | "hanzi" | "hsk3" | "practice">("dashboard");
+  const [tab, setTab] = useState<"flashcards" | "hanzi" | "hsk3" | "practice" | "browse" | "stats">("flashcards");
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
 
@@ -98,6 +177,51 @@ export default function HanziDashboard({
   function saveDeck(deck: string) {
     localStorage.setItem("ankiDeck", deck);
     setDeckName(deck);
+  }
+
+  // Site-native replacement for what "Refresh from Anki" used to be the
+  // only way to do: adding an HSK word to (or pausing it from) your active
+  // study set. Updates local state optimistically, then confirms with the
+  // API; a failure reverts the optimistic change.
+  async function handleToggleHsk3Known(word: string, known: boolean) {
+    const prevCoverage = hsk3Coverage;
+    setHsk3Coverage((cov) => {
+      const levels = { ...cov.levels };
+      const summary = { ...cov.summary };
+      for (const [levelKey, words] of Object.entries(levels)) {
+        const idx = words.findIndex((w) => w.word === word);
+        if (idx === -1) continue;
+        const current = words[idx];
+        if (current.known === known) break;
+        const updatedWords = [...words];
+        updatedWords[idx] = known
+          ? {
+              ...current,
+              known: true,
+              ...(current.reps == null
+                ? { interval: 0, reps: 0, lapses: 0, factor: 2500, queue: 0, due: 0, type: 0, mod: Math.floor(Date.now() / 1000) }
+                : {}),
+            }
+          : { ...current, known: false };
+        levels[levelKey] = updatedWords;
+        const s = summary[levelKey] ?? { total: words.length, known: 0 };
+        summary[levelKey] = { ...s, known: s.known + (known ? 1 : -1) };
+        break;
+      }
+      return { ...cov, levels, summary };
+    });
+
+    try {
+      const res = await fetch("/api/hsk3-toggle-known", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ word, known }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? "Failed to update word");
+    } catch (e) {
+      setHsk3Coverage(prevCoverage);
+      setError(e instanceof Error ? e.message : "Failed to update word");
+    }
   }
 
   async function refreshFromAnki(urlOverride?: string, deckOverride?: string, auto = false) {
@@ -169,18 +293,25 @@ export default function HanziDashboard({
                 mod: info.mod ?? null,
               }
             : {};
-        if (existing) return { ...existing, ...stats };
+
+        // Content fields always come fresh from Anki — it's the
+        // authoritative source for card content (character, meaning,
+        // components, examples), unlike scheduling stats which the website
+        // can also update independently.
         const rankTag = note.tags.find((t) => /^\d+$/.test(t));
         const pronunciation = note.fields["Pronunciation"]?.value ?? "";
         const rawFront = note.fields["Front"]?.value ?? "";
-        return {
+        const content: Partial<HanziCard> = {
           character: note.fields["Character"]?.value ?? "",
-          rank: rankTag ? parseInt(rankTag, 10) : 9999,
+          rank: rankTag ? parseInt(rankTag, 10) : existing?.rank ?? 9999,
           pronunciation,
           front: cleanMeaning(pronunciation, rawFront),
-          note_id: note.noteId,
-          ...stats,
+          components: note.fields["Components"]?.value ?? "",
+          examples: note.fields["Examples"]?.value ?? "",
         };
+
+        if (existing) return { ...existing, ...content, ...stats };
+        return { ...content, note_id: note.noteId, ...stats } as HanziCard;
       });
       updatedCards.sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
 
@@ -204,6 +335,10 @@ export default function HanziDashboard({
         const { error } = await saveRes.json();
         throw new Error(`Saved locally but failed to sync to database: ${error}`);
       }
+
+      const hanziCardIdToDbId = new Map<number, string | number>();
+      for (const note of allNotes) for (const cid of note.cards ?? []) hanziCardIdToDbId.set(cid, note.noteId);
+      await syncReviewLog("hanzi", allCardIds, hanziCardIdToDbId, effectiveUrl);
 
       // Also refresh the HSK 3.0 vocabulary coverage from the same Anki instance.
       const hsk3NoteIds: number[] = await ankiConnect(
@@ -245,6 +380,9 @@ export default function HanziDashboard({
             due: info?.due,
             type: info?.type,
             mod: info?.mod ?? null,
+            sentence: n.fields["SentenceSimplified"]?.value?.replace(/<[^>]+>/g, "").trim() || undefined,
+            sentence_pinyin: n.fields["SentencePinyin.1"]?.value?.replace(/<[^>]+>/g, "").trim() || undefined,
+            sentence_meaning: n.fields["SentenceMeaning"]?.value?.replace(/<[^>]+>/g, "").trim() || undefined,
           });
         }
 
@@ -253,8 +391,10 @@ export default function HanziDashboard({
         for (const [levelKey, words] of Object.entries(hsk3Coverage.levels)) {
           updatedLevels[levelKey] = words.map((w) => {
             const r = byWord.get(w.word);
-            const { word, pinyin, meaning } = w;
-            return r ? { word, pinyin, meaning, known: true, ...r } : { word, pinyin, meaning, known: false };
+            // Keep every existing field (audio_url, sentence_audio_url,
+            // etc.) instead of rebuilding from just word/pinyin/meaning —
+            // that silently dropped media URLs from memory on every refresh.
+            return r ? { ...w, known: true, ...r } : { ...w, known: false };
           });
           const knownCount = updatedLevels[levelKey].filter((w) => w.known).length;
           hsk3Summary[levelKey] = { total: words.length, known: knownCount };
@@ -284,6 +424,96 @@ export default function HanziDashboard({
         if (!hsk3SaveRes.ok) {
           const { error } = await hsk3SaveRes.json();
           throw new Error(`Saved locally but failed to sync HSK vocabulary to database: ${error}`);
+        }
+
+        const hsk3CardIdToDbId = new Map<number, string | number>();
+        for (const n of hsk3Notes) {
+          const word = n.fields["Simplified"]?.value?.trim();
+          const cardId = n.cards?.[0];
+          if (word && cardId) hsk3CardIdToDbId.set(cardId, word);
+        }
+        await syncReviewLog("hsk3", hsk3CardIds, hsk3CardIdToDbId, effectiveUrl);
+      }
+
+      // Also refresh scheduling state for Random words / 中文的谚语/成语 —
+      // content fields (word/pinyin/meaning/...) are left alone here; those
+      // are only ever touched by `npm run sync-words-phrases`. This block
+      // exists purely so Due counts don't go stale between full syncs.
+      const wpDecks: { deck: string; source: "random_words" | "idioms" }[] = [
+        { deck: "Mandarin::Random words", source: "random_words" },
+        { deck: "Mandarin::中文的谚语/成语", source: "idioms" },
+      ];
+      const existingWpByNoteId = new Map(wordsPhrases.map((p) => [p.note_id, p]));
+      const wpUpdates = new Map<number, WordPhrase>();
+
+      for (const { deck, source } of wpDecks) {
+        const noteIds: number[] = await ankiConnect("findNotes", { query: `deck:"${deck}"` }, effectiveUrl);
+        if (noteIds.length === 0) continue;
+
+        const notes: NoteInfo[] = [];
+        for (let i = 0; i < noteIds.length; i += 600) {
+          const batch = await ankiConnect("notesInfo", { notes: noteIds.slice(i, i + 600) }, effectiveUrl);
+          notes.push(...(Array.isArray(batch) ? batch.filter(Boolean) : []));
+        }
+        const cardIds = notes.map((n) => n.cards?.[0]).filter((id): id is number => !!id);
+        const cardInfo: {
+          cardId: number; interval: number; reps: number; lapses: number;
+          factor: number; queue: number; due: number; type: number; mod?: number;
+        }[] = [];
+        for (let i = 0; i < cardIds.length; i += 600) {
+          const batch = await ankiConnect("cardsInfo", { cards: cardIds.slice(i, i + 600) }, effectiveUrl);
+          cardInfo.push(...batch);
+        }
+        const cardInfoById = Object.fromEntries(cardInfo.map((c) => [c.cardId, c]));
+
+        for (const note of notes) {
+          const existing = existingWpByNoteId.get(note.noteId);
+          const cardId = note.cards?.[0];
+          const info = cardId ? cardInfoById[cardId] : undefined;
+          if (!info || !existing) continue;
+          const incomingIsNewer = !existing.mod || !info.mod || info.mod >= existing.mod;
+          if (!incomingIsNewer) continue;
+          wpUpdates.set(note.noteId, {
+            ...existing,
+            interval: info.interval,
+            reps: info.reps,
+            lapses: info.lapses,
+            factor: info.factor,
+            queue: info.queue,
+            due: info.due,
+            type: info.type,
+            mod: info.mod ?? null,
+          });
+        }
+
+        const cardIdToDbId = new Map<number, string | number>();
+        for (const n of notes) for (const cid of n.cards ?? []) cardIdToDbId.set(cid, n.noteId);
+        await syncReviewLog(source, cardIds, cardIdToDbId, effectiveUrl);
+      }
+
+      if (wpUpdates.size > 0) {
+        const updatedWordsPhrases = wordsPhrases.map((p) => wpUpdates.get(p.note_id) ?? p);
+        setWordsPhrases(updatedWordsPhrases);
+
+        const wpRows = [...wpUpdates.values()].map((p) => ({
+          note_id: p.note_id,
+          interval: p.interval,
+          reps: p.reps,
+          lapses: p.lapses,
+          factor: p.factor,
+          queue: p.queue,
+          due: p.due,
+          type: p.type,
+          mod: p.mod,
+        }));
+        const wpSaveRes = await fetch("/api/words-phrases-sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rows: wpRows }),
+        });
+        if (!wpSaveRes.ok) {
+          const { error } = await wpSaveRes.json();
+          throw new Error(`Saved locally but failed to sync words/phrases to database: ${error}`);
         }
       }
 
@@ -371,11 +601,9 @@ export default function HanziDashboard({
         </div>
       </div>
 
-      <MandarinSearch cards={cards} hsk3Coverage={hsk3Coverage} wordsPhrases={wordsPhrases} />
-
       {/* Tabs */}
       <div className="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-800">
-        {(["dashboard", "flashcards", "hanzi", "hsk3", "practice"] as const).map((t) => (
+        {(["flashcards", "hanzi", "hsk3", "practice", "browse", "stats"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -385,22 +613,20 @@ export default function HanziDashboard({
                 : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
             }`}
           >
-            {t === "dashboard"
-              ? "Dashboard"
-              : t === "flashcards"
+            {t === "flashcards"
               ? "Flashcards"
               : t === "hanzi"
               ? "Hanzi"
               : t === "hsk3"
               ? "HSK 3.0"
-              : "Practice writing"}
+              : t === "practice"
+              ? "Practice writing"
+              : t === "browse"
+              ? "Browse"
+              : "Statistics"}
           </button>
         ))}
       </div>
-
-      {tab === "dashboard" && (
-        <MandarinOverview cards={cards} stats={stats} hsk3Coverage={hsk3Coverage} isDark={isDark} />
-      )}
 
       {tab === "flashcards" && <FlashcardTab cards={cards} hsk3Coverage={hsk3Coverage} wordsPhrases={wordsPhrases} />}
 
@@ -408,11 +634,15 @@ export default function HanziDashboard({
 
       {tab === "hsk3" && (
         <div className="space-y-4">
-          <Hsk3Grid coverage={hsk3Coverage} isDark={isDark} />
+          <Hsk3Grid coverage={hsk3Coverage} isDark={isDark} onToggleKnown={handleToggleHsk3Known} />
         </div>
       )}
 
       {tab === "hanzi" && <HanziTab cards={cards} hsk3Coverage={hsk3Coverage} stats={stats} isDark={isDark} />}
+
+      {tab === "browse" && <BrowseTab cards={cards} hsk3Coverage={hsk3Coverage} wordsPhrases={wordsPhrases} />}
+
+      {tab === "stats" && <StatsTab cards={cards} hsk3Coverage={hsk3Coverage} wordsPhrases={wordsPhrases} />}
     </div>
   );
 }

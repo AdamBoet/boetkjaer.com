@@ -8,6 +8,11 @@ export interface Hsk3Word {
   known: boolean;
   pinyin?: string;
   meaning?: string;
+  sentence?: string;
+  sentence_pinyin?: string;
+  sentence_meaning?: string;
+  audio_url?: string | null;
+  sentence_audio_url?: string | null;
   note_id?: number;
   card_id?: number;
   interval?: number;
@@ -230,7 +235,15 @@ function relativeDue(word: Hsk3Word): string | null {
   return `Due in ${diff}d`;
 }
 
-function Hsk3Tooltip({ word, score }: { word: Hsk3Word; score: number | undefined }) {
+function Hsk3Tooltip({
+  word,
+  score,
+  onToggleKnown,
+}: {
+  word: Hsk3Word;
+  score: number | undefined;
+  onToggleKnown?: (word: string, known: boolean) => void;
+}) {
   const diffPct = score != null ? Math.round(score * 100) : null;
   const hue = score != null ? Math.round(120 * (1 - score)) : null;
   const diffLabel =
@@ -254,7 +267,17 @@ function Hsk3Tooltip({ word, score }: { word: Hsk3Word; score: number | undefine
       </div>
 
       {!word.known && (
-        <p className="text-xs text-zinc-400 dark:text-zinc-500">Not in your deck yet</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs text-zinc-400 dark:text-zinc-500">Not being studied</p>
+          {onToggleKnown && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleKnown(word.word, true); }}
+              className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 transition-colors"
+            >
+              Start studying
+            </button>
+          )}
+        </div>
       )}
 
       {diffLabel && hue != null && (
@@ -302,11 +325,28 @@ function Hsk3Tooltip({ word, score }: { word: Hsk3Word; score: number | undefine
           )}
         </div>
       )}
+
+      {word.known && onToggleKnown && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggleKnown(word.word, false); }}
+          className="text-xs text-zinc-400 dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+        >
+          Remove from study
+        </button>
+      )}
     </div>
   );
 }
 
-function LevelPanel({ words, isDark }: { words: Hsk3Word[]; isDark: boolean }) {
+function LevelPanel({
+  words,
+  isDark,
+  onToggleKnown,
+}: {
+  words: Hsk3Word[];
+  isDark: boolean;
+  onToggleKnown?: (word: string, known: boolean) => void;
+}) {
   const [hovered, setHovered] = useState<Hsk3Word | null>(null);
   const [pinned, setPinned] = useState<Hsk3Word | null>(null);
   const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 });
@@ -383,7 +423,7 @@ function LevelPanel({ words, isDark }: { words: Hsk3Word[]; isDark: boolean }) {
             className="sm:hidden fixed bottom-4 left-0 right-0 z-50 flex justify-center px-4"
             onClick={(e) => e.stopPropagation()}
           >
-            <Hsk3Tooltip word={activeWord} score={scoreMap.get(activeWord.word)} />
+            <Hsk3Tooltip word={activeWord} score={scoreMap.get(activeWord.word)} onToggleKnown={onToggleKnown} />
           </div>
           <div
             className={`hidden sm:block fixed z-50 ${pinned ? "" : "pointer-events-none"}`}
@@ -393,7 +433,7 @@ function LevelPanel({ words, isDark }: { words: Hsk3Word[]; isDark: boolean }) {
             onMouseMove={(e) => e.stopPropagation()}
             onClick={(e) => e.stopPropagation()}
           >
-            <Hsk3Tooltip word={activeWord} score={scoreMap.get(activeWord.word)} />
+            <Hsk3Tooltip word={activeWord} score={scoreMap.get(activeWord.word)} onToggleKnown={onToggleKnown} />
           </div>
         </>
       )}
@@ -401,7 +441,15 @@ function LevelPanel({ words, isDark }: { words: Hsk3Word[]; isDark: boolean }) {
   );
 }
 
-export default function Hsk3Grid({ coverage, isDark }: { coverage: Hsk3Coverage; isDark: boolean }) {
+export default function Hsk3Grid({
+  coverage,
+  isDark,
+  onToggleKnown,
+}: {
+  coverage: Hsk3Coverage;
+  isDark: boolean;
+  onToggleKnown?: (word: string, known: boolean) => void;
+}) {
   const [level, setLevel] = useState<string>("overview");
   const activeSummary = level !== "overview" ? coverage.summary[level] : null;
   const activePct =
@@ -445,7 +493,7 @@ export default function Hsk3Grid({ coverage, isDark }: { coverage: Hsk3Coverage;
             />
             <MasteryCard score={mastery(coverage.levels[level] ?? [])} isDark={isDark} />
           </div>
-          <LevelPanel words={coverage.levels[level] ?? []} isDark={isDark} />
+          <LevelPanel words={coverage.levels[level] ?? []} isDark={isDark} onToggleKnown={onToggleKnown} />
         </div>
       )}
     </div>

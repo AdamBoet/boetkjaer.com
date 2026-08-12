@@ -9,6 +9,10 @@ export interface HanziCard {
   rank: number;
   pronunciation: string;
   front: string;
+  components?: string;
+  examples?: string;
+  audio_url?: string | null;
+  picture_url?: string | null;
   note_id: number;
   card_id?: number;
   interval?: number;

@@ -93,20 +93,21 @@ function parseRandomWord(entry) {
   const { note } = entry;
   const front = note.fields["Front"]?.value?.trim() ?? "";
   const back = note.fields["Back"]?.value ?? "";
-  const parts = back.split(/<br\s*\/?>/i).map((p) => stripHtml(p).trim());
-  const [, pinyin, meaning, , exampleCn, examplePinyin, exampleEn] = parts;
-  let fullMeaning = meaning ?? "";
-  if (exampleCn) {
-    fullMeaning += `\n\n${exampleCn}`;
-    if (examplePinyin) fullMeaning += ` (${examplePinyin})`;
-    if (exampleEn) fullMeaning += `\n${exampleEn}`;
-  }
+  // Some notes wrap lines in <div> (with the blank separator as a whole
+  // <div><br></div>) instead of bare <br><br> — splitting on <br> alone
+  // shifts positions for those. stripHtml already normalizes both cases
+  // into newline-joined, blank-filtered lines.
+  const lines = stripHtml(back).split("\n");
+  const [, pinyin, meaning, exampleCn, examplePinyin, exampleEn] = lines;
   return {
     ...statRow(entry),
     source: "random_words",
     word: front,
     pinyin: pinyin || null,
-    meaning: fullMeaning || null,
+    meaning: meaning || null,
+    example: exampleCn || null,
+    example_pinyin: examplePinyin || null,
+    example_meaning: exampleEn || null,
   };
 }
 
