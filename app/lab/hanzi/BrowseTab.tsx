@@ -67,15 +67,19 @@ interface ColumnConfig {
   visible: boolean;
 }
 
-function defaultColumns(): ColumnConfig[] {
-  return DEFAULT_COLUMN_ORDER.map((key) => ({ key, visible: !DEFAULT_HIDDEN_COLUMNS.includes(key) }));
+function defaultColumns(extraHidden: ColumnKey[] = []): ColumnConfig[] {
+  return DEFAULT_COLUMN_ORDER.map((key) => ({ key, visible: !DEFAULT_HIDDEN_COLUMNS.includes(key) && !extraHidden.includes(key) }));
 }
 
-function loadColumns(): ColumnConfig[] {
+// On a phone, default a few lower-priority columns to hidden so the table
+// doesn't need to be crushed/scrolled to be readable — only ever applied
+// when the user has no saved column layout yet (see loadColumns below), so
+// it never overrides an existing preference.
+function loadColumns(extraHidden: ColumnKey[] = []): ColumnConfig[] {
   if (typeof window === "undefined") return defaultColumns();
   try {
     const raw = localStorage.getItem(COLUMNS_STORAGE_KEY);
-    if (!raw) return defaultColumns();
+    if (!raw) return defaultColumns(extraHidden);
     const parsed = JSON.parse(raw) as ColumnConfig[];
     const known = new Set(parsed.map((c) => c.key));
     // Re-include any column a code change added since the user last saved
@@ -220,20 +224,29 @@ function CardEditor({
   const [front, setFront] = useState(row.front);
   const [sub, setSub] = useState(row.sub);
   const [back, setBack] = useState(row.back);
+  // Hanzi-only fields — no equivalent on hsk3/random_words/idioms rows.
+  const [components, setComponents] = useState(row.components ?? "");
+  const [examples, setExamples] = useState(row.examples ?? "");
   const [pictureUrl, setPictureUrl] = useState(row.pictureUrl ?? null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
 
-  const dirty = front !== row.front || sub !== row.sub || back !== row.back;
+  const dirty =
+    front !== row.front ||
+    sub !== row.sub ||
+    back !== row.back ||
+    (row.source === "hanzi" && (components !== (row.components ?? "") || examples !== (row.examples ?? "")));
 
   async function save() {
     setSaving(true);
     setError(null);
     try {
-      await gradeCard(row.source, row.dbId, buildEditUpdates(row.source, front, sub, back));
-      onSaved({ front, sub, back });
+      const updates = buildEditUpdates(row.source, front, sub, back);
+      if (row.source === "hanzi") Object.assign(updates, { components, examples });
+      await gradeCard(row.source, row.dbId, updates);
+      onSaved({ front, sub, back, ...(row.source === "hanzi" ? { components, examples } : {}) });
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 1500);
     } catch (e) {
@@ -350,6 +363,27 @@ function CardEditor({
             className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
           />
         </label>
+        {row.source === "hanzi" && (
+          <>
+            <label className="block space-y-1">
+              <span className="text-xs text-zinc-500">Components</span>
+              <input
+                value={components}
+                onChange={(e) => setComponents(e.target.value)}
+                className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs text-zinc-500">Examples</span>
+              <textarea
+                value={examples}
+                onChange={(e) => setExamples(e.target.value)}
+                rows={2}
+                className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              />
+            </label>
+          </>
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
@@ -391,10 +425,15 @@ export default function BrowseTab({
   cards,
   hsk3Coverage,
   wordsPhrases,
+  focusCard,
+  onFocusHandled,
 }: {
   cards: HanziCard[];
   hsk3Coverage: Hsk3Coverage;
   wordsPhrases: WordPhrase[];
+  /** Set (e.g. from the flashcard review's "open in Browse" shortcut) to select + scroll to a specific card once. */
+  focusCard?: { source: DeckKey; dbId: number | string } | null;
+  onFocusHandled?: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [deckFilter, setDeckFilter] = useState<DeckKey | "all">("all");
@@ -450,7 +489,8 @@ export default function BrowseTab({
   const lastOverKeyRef = useRef<ColumnKey | null>(null);
 
   useEffect(() => {
-    setColumns(loadColumns());
+    const isMobile = window.matchMedia("(max-width: 767px)").matches;
+    setColumns(loadColumns(isMobile ? (["reps", "interval", "rank"] as ColumnKey[]) : []));
     setColumnsHydrated(true);
   }, []);
 
@@ -538,7 +578,14 @@ export default function BrowseTab({
   }, [dragState?.key]);
 
   const visibleColumns = useMemo(() => columns.filter((c) => c.visible).map((c) => c.key), [columns]);
-  const gridTemplate = useMemo(() => visibleColumns.map((k) => `${COLUMN_WIDTH[k]}fr`).join(" "), [visibleColumns]);
+  // A floor per column (via minmax) so on a narrow viewport the table
+  // scrolls horizontally instead of the old plain-`fr` behavior, which just
+  // divided up whatever width was available and crushed every column
+  // (especially the low-fr ones like reps/interval) into unreadable slivers.
+  const gridTemplate = useMemo(
+    () => visibleColumns.map((k) => `minmax(${COLUMN_WIDTH[k] * 8}px, ${COLUMN_WIDTH[k]}fr)`).join(" "),
+    [visibleColumns]
+  );
 
   const baseRows = useMemo<Row[]>(
     () => buildMandarinRows(cards, hsk3Coverage, wordsPhrases),
@@ -656,6 +703,32 @@ export default function BrowseTab({
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedId, sorted, rowVirtualizer]);
+
+  // Jump-to-card from outside (the flashcard review's "open in Browse"
+  // shortcut): clear whatever filters might be hiding the target row, then
+  // — once `sorted` reflects that on a later render — select and scroll to
+  // it. Two effects because clearing filters and `sorted` updating can't
+  // happen in the same synchronous pass.
+  const pendingFocusId = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusCard) return;
+    const prefix = focusCard.source === "hanzi" ? "hanzi" : focusCard.source === "hsk3" ? "hsk3" : "wp";
+    pendingFocusId.current = `${prefix}-${focusCard.dbId}`;
+    setQuery("");
+    setDeckFilter("all");
+    setLevelFilter(null);
+    setStatusFilter("all");
+  }, [focusCard]);
+
+  useEffect(() => {
+    if (!pendingFocusId.current) return;
+    const idx = sorted.findIndex((r) => r.id === pendingFocusId.current);
+    if (idx === -1) return;
+    setSelectedId(sorted[idx].id);
+    rowVirtualizer.scrollToIndex(idx, { align: "center" });
+    pendingFocusId.current = null;
+    onFocusHandled?.();
+  }, [sorted, rowVirtualizer, onFocusHandled]);
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir((d) => (d === 1 ? -1 : 1));
@@ -905,7 +978,7 @@ export default function BrowseTab({
             lag). Column widths/order are driven by `columns` state, shared
             via `gridTemplate` between the header and every row so they stay
             aligned; header cells are draggable to reorder them. */}
-        <div ref={tableRef} className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden text-sm">
+        <div ref={tableRef} className="flex-1 min-w-0 overflow-auto text-sm">
           <div
             className="sticky top-0 z-10 grid bg-zinc-50 dark:bg-zinc-900/95 backdrop-blur border-b border-zinc-200 dark:border-zinc-800"
             style={{ gridTemplateColumns: gridTemplate }}

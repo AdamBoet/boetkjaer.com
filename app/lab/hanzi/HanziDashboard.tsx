@@ -3,13 +3,13 @@
 import { useState, useEffect, useRef } from "react";
 import { useTheme } from "next-themes";
 import { type HanziCard } from "./CharacterGrid";
-import { cleanMeaning } from "./card-utils";
 import WritingPractice from "./WritingPractice";
 import Hsk3Grid, { type Hsk3Coverage } from "./Hsk3Grid";
-import FlashcardTab, { type WordPhrase } from "./FlashcardTab";
+import FlashcardTab, { type WordPhrase, type DeckKey } from "./FlashcardTab";
 import HanziTab from "./HanziTab";
 import BrowseTab from "./BrowseTab";
 import StatsTab from "./StatsTab";
+import { useReviewing } from "../../components/ReviewingContext";
 
 const YEARLY_GOAL = 1500;
 const CARDS_PER_DAY = 5;
@@ -142,6 +142,12 @@ export default function HanziDashboard({
   const [deckName, setDeckName] = useState("Mandarin::汉字 writing");
   const settingsRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<"flashcards" | "hanzi" | "hsk3" | "practice" | "browse" | "stats">("flashcards");
+  // Bridges the flashcard review's "open in Browse" shortcut (B) to the
+  // Browse tab, which reads it once, jumps to that row, then clears it.
+  const [focusCard, setFocusCard] = useState<{ source: DeckKey; dbId: number | string } | null>(null);
+  // Hides the header + tab bar while an actual flashcard review session is
+  // active (not the deck-menu screen), so the review gets the full page.
+  const { reviewing, setReviewing } = useReviewing();
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
 
@@ -305,7 +311,7 @@ export default function HanziDashboard({
           character: note.fields["Character"]?.value ?? "",
           rank: rankTag ? parseInt(rankTag, 10) : existing?.rank ?? 9999,
           pronunciation,
-          front: cleanMeaning(pronunciation, rawFront),
+          front: rawFront,
           components: note.fields["Components"]?.value ?? "",
           examples: note.fields["Examples"]?.value ?? "",
         };
@@ -545,90 +551,47 @@ export default function HanziDashboard({
   });
 
   return (
-    <div className="w-full space-y-8">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Mandarin Progress</h1>
-          <p className="mt-1 text-sm text-zinc-500">Updated {updatedStr}</p>
-        </div>
-        <div className="flex flex-col items-end gap-1">
-          <div className="flex items-center gap-1.5">
+    <div className="w-full space-y-8 -mt-20 pt-4 md:mt-0 md:pt-0">
+      {!reviewing && (
+        <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 border-b border-zinc-200 dark:border-zinc-800">
+          {(["flashcards", "hanzi", "hsk3", "practice", "browse", "stats"] as const).map((t) => (
             <button
-              onClick={() => refreshFromAnki()}
-              disabled={loading}
-              className="shrink-0 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              key={t}
+              onClick={() => setTab(t)}
+              className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                tab === t
+                  ? "border-zinc-800 dark:border-zinc-200 text-zinc-900 dark:text-zinc-100"
+                  : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+              }`}
             >
-              {loading ? "Fetching…" : synced ? "You're up to date" : "Refresh from Anki"}
+              {t === "flashcards"
+                ? "Flashcards"
+                : t === "hanzi"
+                ? "Hanzi"
+                : t === "hsk3"
+                ? "HSK 3.0"
+                : t === "practice"
+                ? "Practice writing"
+                : t === "browse"
+                ? "Browse"
+                : "Statistics"}
             </button>
-            <div className="relative" ref={settingsRef}>
-              <button
-                onClick={() => setShowSettings((v) => !v)}
-                className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-1.5 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-                aria-label="AnkiConnect settings"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-                </svg>
-              </button>
-              {showSettings && (
-                <div className="absolute right-0 top-full mt-1.5 z-20 w-72 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-lg p-4 space-y-3">
-                  <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">AnkiConnect settings</p>
-                  <label className="block space-y-1">
-                    <span className="text-xs text-zinc-500">URL</span>
-                    <input
-                      type="text"
-                      value={ankiUrl}
-                      onChange={(e) => saveSettings(e.target.value)}
-                      className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
-                      placeholder="http://localhost:8765"
-                    />
-                  </label>
-                  <label className="block space-y-1">
-                    <span className="text-xs text-zinc-500">Deck</span>
-                    <input
-                      type="text"
-                      value={deckName}
-                      onChange={(e) => saveDeck(e.target.value)}
-                      className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-xs text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
-                      placeholder="Mandarin::汉字 writing"
-                    />
-                  </label>
-                </div>
-              )}
-            </div>
-          </div>
-          {error && <p className="text-xs text-red-500 max-w-48 text-right">{error}</p>}
+          ))}
         </div>
-      </div>
+      )}
 
-      {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-800">
-        {(["flashcards", "hanzi", "hsk3", "practice", "browse", "stats"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === t
-                ? "border-zinc-800 dark:border-zinc-200 text-zinc-900 dark:text-zinc-100"
-                : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-            }`}
-          >
-            {t === "flashcards"
-              ? "Flashcards"
-              : t === "hanzi"
-              ? "Hanzi"
-              : t === "hsk3"
-              ? "HSK 3.0"
-              : t === "practice"
-              ? "Practice writing"
-              : t === "browse"
-              ? "Browse"
-              : "Statistics"}
-          </button>
-        ))}
-      </div>
-
-      {tab === "flashcards" && <FlashcardTab cards={cards} hsk3Coverage={hsk3Coverage} wordsPhrases={wordsPhrases} />}
+      {tab === "flashcards" && (
+        <FlashcardTab
+          cards={cards}
+          hsk3Coverage={hsk3Coverage}
+          wordsPhrases={wordsPhrases}
+          onJumpToCard={(c) => {
+            setFocusCard(c);
+            setTab("browse");
+          }}
+          onReviewingChange={setReviewing}
+        />
+      )}
 
       {tab === "practice" && <WritingPractice cards={cards} />}
 
@@ -640,7 +603,15 @@ export default function HanziDashboard({
 
       {tab === "hanzi" && <HanziTab cards={cards} hsk3Coverage={hsk3Coverage} stats={stats} isDark={isDark} />}
 
-      {tab === "browse" && <BrowseTab cards={cards} hsk3Coverage={hsk3Coverage} wordsPhrases={wordsPhrases} />}
+      {tab === "browse" && (
+        <BrowseTab
+          cards={cards}
+          hsk3Coverage={hsk3Coverage}
+          wordsPhrases={wordsPhrases}
+          focusCard={focusCard}
+          onFocusHandled={() => setFocusCard(null)}
+        />
+      )}
 
       {tab === "stats" && <StatsTab cards={cards} hsk3Coverage={hsk3Coverage} wordsPhrases={wordsPhrases} />}
     </div>

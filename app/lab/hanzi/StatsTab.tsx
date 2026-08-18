@@ -122,9 +122,21 @@ function BarChart({
     setMouse({ x: e.clientX - rect.left, y: e.clientY - rect.top });
   }
 
+  // Touch has no hover — tapping a bar shows its tooltip the same way
+  // hovering does on desktop; tapping the same bar again dismisses it.
+  function handleTap(e: React.MouseEvent, i: number) {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (rect) setMouse({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    setHover((h) => (h === i ? null : i));
+  }
+
   return (
-    <div className="relative" ref={containerRef}>
-      <div className="flex items-end justify-center gap-[3px]" style={{ height }} onMouseMove={handleMove}>
+    <div className="relative overflow-x-auto" ref={containerRef}>
+      <div
+        className="flex items-end justify-center gap-[3px] mx-auto"
+        style={{ height, minWidth: bars.length * (barMaxWidth + 3) }}
+        onMouseMove={handleMove}
+      >
         {bars.map((b, i) => {
           const fadeFrom = barOpacity ? barOpacity[i] : b.value / max;
           const clamped = fadeFrom == null ? null : Math.max(0, Math.min(1, fadeFrom));
@@ -141,6 +153,7 @@ function BarChart({
             style={{ maxWidth: barMaxWidth }}
             onMouseEnter={() => setHover(i)}
             onMouseLeave={() => setHover((h) => (h === i ? null : h))}
+            onClick={(e) => handleTap(e, i)}
           >
             <div
               className={`w-full rounded-t-sm transition-opacity ${b.value === 0 ? "bg-zinc-200 dark:bg-zinc-700" : barColor}`}
@@ -174,7 +187,10 @@ function BarChart({
           )}
         </div>
       )}
-      <div className="flex justify-center gap-[3px] mt-1">
+      <div
+        className="flex justify-center gap-[3px] mt-1 mx-auto"
+        style={{ minWidth: bars.length * (barMaxWidth + 3) }}
+      >
         {bars.map((b, i) => (
           // Must match the bar column's own max-w exactly — giving labels a
           // different width than their bar desyncs each row's centering
@@ -233,6 +249,14 @@ function CalendarHeatmap({ byDate }: { byDate: Map<string, number> }) {
     const rect = gridRef.current?.getBoundingClientRect();
     if (!rect) return;
     setMouse({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  }
+
+  // Touch has no hover — tapping a day shows its tooltip; tapping the same
+  // day again dismisses it.
+  function handleTap(e: React.MouseEvent, key: string) {
+    const rect = gridRef.current?.getBoundingClientRect();
+    if (rect) setMouse({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    setHover((h) => (h === key ? null : key));
   }
 
   const { cells, max } = useMemo(() => {
@@ -295,6 +319,7 @@ function CalendarHeatmap({ byDate }: { byDate: Map<string, number> }) {
               key={c.key}
               onMouseEnter={() => setHover(c.key)}
               onMouseLeave={() => setHover((h) => (h === c.key ? null : h))}
+              onClick={(e) => handleTap(e, c.key)}
               className={`relative w-[10px] h-[10px] rounded-[2px] ${
                 c.inYear ? CALENDAR_LEVELS[levelFor(c.count, max)] : "bg-transparent"
               }`}
@@ -513,7 +538,7 @@ export default function StatsTab({
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <div className="flex items-center gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 p-0.5 w-fit">
+        <div className="flex items-center flex-wrap gap-1 rounded-lg border border-zinc-200 dark:border-zinc-700 p-0.5 w-fit">
           {(["all", "hanzi", "hsk3", "random_words", "idioms"] as const).map((k) => (
             <button
               key={k}
@@ -674,7 +699,7 @@ export default function StatsTab({
           <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">Interval distribution</p>
           <p className="text-xs text-zinc-400 dark:text-zinc-500">How mature your studied cards are — longer intervals mean you know them better.</p>
         </div>
-        <BarChart bars={intervalHistogram} barColor="bg-sky-600 dark:bg-sky-500" barMaxWidth={56} />
+        <BarChart bars={intervalHistogram} barColor="bg-sky-600 dark:bg-sky-500" barMaxWidth={40} />
       </div>
 
       {answerButtons && (

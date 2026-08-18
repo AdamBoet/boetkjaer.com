@@ -4,6 +4,9 @@ import { useMemo, useRef, useState, useEffect } from "react";
 import { type HanziCard } from "./CharacterGrid";
 import { cardDueDiff } from "./card-utils";
 import { type Hsk3Coverage, type Hsk3Word } from "./Hsk3Grid";
+import HanziWritingBox from "./HanziWritingBox";
+import HanziCharacterPreview from "./HanziCharacterPreview";
+import { TrackpadModeProvider, useTrackpadModeContext } from "./TrackpadModeContext";
 
 export interface WordPhrase {
   note_id: number;
@@ -340,6 +343,18 @@ export function toDueCard(key: DeckKey, card: AnyCard, dueDiff: number | null, i
   };
 }
 
+// Hanzi cards' `back` field (the DB's `front` column) is formatted as
+// "romanization (meaning)" — e.g. "gui (to return; to belong to)", per
+// docs/reference.md's card layout. Swaps the toneless romanization out for
+// proper pinyin+number (already available separately as `sub`), keeping the
+// "(meaning)" parenthetical as-is — including multi-pronunciation cards
+// where both `sub` and `back` list readings "/"-separated in the same order.
+function pinyinFrontHeadline(sub: string, back: string): string {
+  const parenIdx = back.indexOf("(");
+  if (parenIdx === -1) return sub || back;
+  return `${sub} ${back.slice(parenIdx)}`;
+}
+
 function shuffle<T>(arr: T[]): T[] {
   const out = [...arr];
   for (let i = out.length - 1; i > 0; i--) {
@@ -501,7 +516,7 @@ function DeckMenu({
 
   return (
     <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none overflow-hidden">
-      <div className="grid grid-cols-[minmax(240px,auto)_68px_68px_68px_32px] items-center gap-3 px-5 py-3.5 bg-zinc-50 dark:bg-zinc-950/40 border-b border-zinc-200 dark:border-zinc-800">
+      <div className="grid grid-cols-[1fr_36px_36px_36px_28px] sm:grid-cols-[minmax(240px,auto)_68px_68px_68px_32px] items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3.5 bg-zinc-50 dark:bg-zinc-950/40 border-b border-zinc-200 dark:border-zinc-800">
         <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Deck</span>
         <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100 text-center">New</span>
         <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100 text-center">Learn</span>
@@ -510,7 +525,7 @@ function DeckMenu({
       </div>
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="w-full grid grid-cols-[minmax(240px,auto)_68px_68px_68px_32px] items-center gap-3 px-5 py-3.5 text-xs font-semibold text-zinc-400 dark:text-zinc-500 border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 transition-colors"
+        className="w-full grid grid-cols-[1fr_36px_36px_36px_28px] sm:grid-cols-[minmax(240px,auto)_68px_68px_68px_32px] items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3.5 text-xs font-semibold text-zinc-400 dark:text-zinc-500 border-b border-zinc-100 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 transition-colors"
       >
         <span className="flex items-center gap-1.5">
           <svg
@@ -532,7 +547,7 @@ function DeckMenu({
         const total = d.newCount + d.learnCount + d.dueCount;
         return (
           <div key={d.key} className="relative border-b border-zinc-100 dark:border-zinc-800 last:border-b-0 group">
-            <div className="w-full grid grid-cols-[minmax(240px,auto)_68px_68px_68px_32px] items-center gap-3 px-5 py-3.5 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
+            <div className="w-full grid grid-cols-[1fr_36px_36px_36px_28px] sm:grid-cols-[minmax(240px,auto)_68px_68px_68px_32px] items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3.5 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
               <button
                 onClick={() => onSelect(d.key)}
                 disabled={total === 0}
@@ -603,6 +618,24 @@ function HotkeyRow({ keys, description }: { keys: string[]; description: string 
   );
 }
 
+function TrackpadToggleButton() {
+  const { trackpadMode, toggle } = useTrackpadModeContext();
+  return (
+    <button
+      onClick={toggle}
+      aria-pressed={trackpadMode}
+      title="Toggle trackpad mode (T)"
+      className={`inline-flex items-center h-4 leading-none text-[11px] uppercase tracking-wide transition-colors ${
+        trackpadMode
+          ? "text-blue-500 dark:text-blue-400 [text-shadow:0_0_10px_rgba(59,130,246,0.85)]"
+          : "text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"
+      }`}
+    >
+      Trackpad
+    </button>
+  );
+}
+
 function HotkeysPanel() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -619,7 +652,7 @@ function HotkeysPanel() {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 text-[11px] text-zinc-400 dark:text-zinc-500 uppercase tracking-wide hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+        className="flex items-center h-4 leading-none gap-1.5 text-[11px] text-zinc-400 dark:text-zinc-500 uppercase tracking-wide hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
       >
         Hotkeys
         <svg
@@ -632,7 +665,7 @@ function HotkeysPanel() {
         </svg>
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-3 w-56 space-y-2.5 z-20 text-left">
+        <div className="absolute right-0 top-full mt-3 w-56 space-y-2.5 z-20 text-left animate-dropdown-in">
           <HotkeyRow keys={["Space"]} description="Show answer / Good" />
           <HotkeyRow keys={["1"]} description="Again" />
           <HotkeyRow keys={["2"]} description="Hard" />
@@ -640,6 +673,9 @@ function HotkeysPanel() {
           <HotkeyRow keys={["4"]} description="Easy" />
           <HotkeyRow keys={["U"]} description="Undo" />
           <HotkeyRow keys={["E"]} description="Edit card" />
+          <HotkeyRow keys={["R"]} description="Redraw character" />
+          <HotkeyRow keys={["T"]} description="Toggle trackpad mode" />
+          <HotkeyRow keys={["B"]} description="Open in Browse" />
         </div>
       )}
     </div>
@@ -652,13 +688,91 @@ function HotkeysPanel() {
 // playing instead of overlapping it.
 let sharedAudio: HTMLAudioElement | null = null;
 
+const AUDIO_MUTED_KEY = "hanziAudioMuted";
+const AUDIO_VOLUME_KEY = "hanziAudioVolume";
+
+function readAudioVolume(): number {
+  const raw = parseFloat(localStorage.getItem(AUDIO_VOLUME_KEY) ?? "1");
+  return Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 1;
+}
+
 function playAudio(src: string, onEnded?: () => void) {
   if (!sharedAudio) sharedAudio = new Audio();
+  // Read the mute/volume preferences fresh on every play rather than
+  // trusting whatever the element already has — keeps this correct
+  // regardless of mount order relative to the audio control's own effect.
+  sharedAudio.muted = localStorage.getItem(AUDIO_MUTED_KEY) === "1";
+  sharedAudio.volume = readAudioVolume();
   sharedAudio.pause();
   sharedAudio.onended = onEnded ?? null;
   sharedAudio.src = src;
   sharedAudio.currentTime = 0;
   sharedAudio.play().catch(() => {});
+}
+
+function AudioControl() {
+  const [muted, setMutedState] = useState(false);
+  const [volume, setVolumeState] = useState(1);
+
+  useEffect(() => {
+    setMutedState(localStorage.getItem(AUDIO_MUTED_KEY) === "1");
+    setVolumeState(readAudioVolume());
+  }, []);
+
+  function setMuted(next: boolean) {
+    setMutedState(next);
+    localStorage.setItem(AUDIO_MUTED_KEY, next ? "1" : "0");
+    if (sharedAudio) sharedAudio.muted = next;
+  }
+
+  function handleVolumeChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const next = Number(e.target.value) / 100;
+    setVolumeState(next);
+    localStorage.setItem(AUDIO_VOLUME_KEY, String(next));
+    if (sharedAudio) sharedAudio.volume = next;
+    // Dragging the slider up implies wanting sound back.
+    if (next > 0 && muted) setMuted(false);
+  }
+
+  const silent = muted || volume === 0;
+
+  return (
+    <div className="flex items-center h-4 gap-2">
+      <input
+        type="range"
+        min={0}
+        max={100}
+        value={Math.round(volume * 100)}
+        onChange={handleVolumeChange}
+        aria-label="Audio volume"
+        className="w-16 h-4 accent-zinc-500 dark:accent-zinc-400"
+      />
+      <button
+        onClick={() => setMuted(!muted)}
+        aria-pressed={muted}
+        aria-label={muted ? "Unmute audio" : "Mute audio"}
+        title={muted ? "Unmute audio" : "Mute audio"}
+        className={`flex items-center h-4 transition-colors ${
+          silent
+            ? "text-zinc-500 dark:text-zinc-400"
+            : "text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"
+        }`}
+      >
+        {silent ? (
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+            <path d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217z" />
+            <path d="M12.293 7.293a1 1 0 011.414 0L15 8.586l1.293-1.293a1 1 0 111.414 1.414L16.414 10l1.293 1.293a1 1 0 01-1.414 1.414L15 11.414l-1.293 1.293a1 1 0 01-1.414-1.414L13.586 10l-1.293-1.293a1 1 0 010-1.414z" />
+          </svg>
+        ) : (
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+            <path d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217z" />
+            <path d="M14.657 5.343a1 1 0 011.414 0A7.975 7.975 0 0118 10a7.975 7.975 0 01-1.929 5.657 1 1 0 11-1.414-1.414A5.975 5.975 0 0016 10a5.975 5.975 0 00-1.343-3.243 1 1 0 010-1.414z" />
+            <path d="M12.828 8.172a1 1 0 011.415 0A2.99 2.99 0 0115 10a2.99 2.99 0 01-.757 1.828 1 1 0 11-1.415-1.414A.99.99 0 0013 10a.99.99 0 00-.172-.586 1 1 0 010-1.242z" />
+          </svg>
+        )}
+      </button>
+    </div>
+  );
 }
 
 function playAudioSequence(urls: string[]) {
@@ -696,12 +810,14 @@ export function EditPanel({
 }: {
   card: DueCard;
   onClose: () => void;
-  onSave: (front: string, sub: string, back: string) => void;
+  onSave: (front: string, sub: string, back: string, components: string, examples: string) => void;
   onPictureUpdated: (url: string | null) => void;
 }) {
   const [front, setFront] = useState(card.front);
   const [sub, setSub] = useState(card.sub);
   const [back, setBack] = useState(card.back);
+  const [components, setComponents] = useState(card.components ?? "");
+  const [examples, setExamples] = useState(card.examples ?? "");
   const [pictureUrl, setPictureUrl] = useState(card.pictureUrl ?? null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -807,6 +923,27 @@ export function EditPanel({
             className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
           />
         </label>
+        {card.source === "hanzi" && (
+          <>
+            <label className="block space-y-1">
+              <span className="text-xs text-zinc-500">Components</span>
+              <input
+                value={components}
+                onChange={(e) => setComponents(e.target.value)}
+                className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs text-zinc-500">Examples</span>
+              <textarea
+                value={examples}
+                onChange={(e) => setExamples(e.target.value)}
+                rows={2}
+                className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              />
+            </label>
+          </>
+        )}
         {card.source !== "hsk3" && (
           <div className="space-y-1">
             <span className="text-xs text-zinc-500">Picture</span>
@@ -836,7 +973,7 @@ export function EditPanel({
             Cancel
           </button>
           <button
-            onClick={() => onSave(front, sub, back)}
+            onClick={() => onSave(front, sub, back, components, examples)}
             className="flex-1 rounded-lg px-3 py-1.5 text-xs font-medium text-white bg-zinc-800 dark:bg-zinc-200 dark:text-zinc-900 hover:opacity-90 transition-colors"
           >
             Save
@@ -848,12 +985,27 @@ export function EditPanel({
 }
 
 // Maps the unified front/sub/back shape back to each source's real columns.
-export function buildEditUpdates(source: DeckKey, front: string, sub: string, back: string): Record<string, unknown> {
-  if (source === "hanzi") return { character: front, pronunciation: sub, front: back };
+export function buildEditUpdates(
+  source: DeckKey,
+  front: string,
+  sub: string,
+  back: string,
+  components?: string,
+  examples?: string
+): Record<string, unknown> {
+  if (source === "hanzi") return { character: front, pronunciation: sub, front: back, components, examples };
   return { word: front, pinyin: sub, meaning: back };
 }
 
-function ReviewSession({ initialQueue, onExit }: { initialQueue: DueCard[]; onExit: () => void }) {
+function ReviewSession({
+  initialQueue,
+  onExit,
+  onJumpToCard,
+}: {
+  initialQueue: DueCard[];
+  onExit: () => void;
+  onJumpToCard?: (card: { source: DeckKey; dbId: number | string }) => void;
+}) {
   const [queue, setQueue] = useState(initialQueue);
   // Learning/relearning cards that aren't due yet — resurfaced into `queue`
   // by the timer effect below once their step's delay elapses, mirroring
@@ -870,6 +1022,16 @@ function ReviewSession({ initialQueue, onExit }: { initialQueue: DueCard[]; onEx
   const shownAtRef = useRef(Date.now());
   useEffect(() => {
     shownAtRef.current = Date.now();
+  }, [current?.id]);
+
+  // Redraw (R, back side only): swaps the filled-in character preview for a
+  // blank drawable box so the user can trace it again. `redoAttempt` forces
+  // a fresh mount each press, even for the same character, so a completed
+  // redraw doesn't just sit there stale the next time R is pressed.
+  const [redoDrawing, setRedoDrawing] = useState(false);
+  const [redoAttempt, setRedoAttempt] = useState(0);
+  useEffect(() => {
+    setRedoDrawing(false);
   }, [current?.id]);
 
   useEffect(() => {
@@ -889,6 +1051,20 @@ function ReviewSession({ initialQueue, onExit }: { initialQueue: DueCard[]; onEx
     // while it stays revealed (e.g. after an undo restores the same card).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revealed, current?.id]);
+
+  // Successfully writing the character out reveals the back automatically —
+  // delayed briefly so the writing box's own green "done" flash is visible
+  // before the layout swaps out from under it.
+  const writeCompleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function handleWriteComplete() {
+    if (writeCompleteTimer.current) clearTimeout(writeCompleteTimer.current);
+    writeCompleteTimer.current = setTimeout(() => setRevealed(true), 600);
+  }
+  useEffect(() => {
+    return () => {
+      if (writeCompleteTimer.current) clearTimeout(writeCompleteTimer.current);
+    };
+  }, []);
 
   const grade = useRef<(g: Grade) => void>(() => {});
   grade.current = (g: Grade) => {
@@ -995,8 +1171,19 @@ function ReviewSession({ initialQueue, onExit }: { initialQueue: DueCard[]; onEx
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
 
-      if (e.key.toLowerCase() === "u") { undo.current(); return; }
+      if (e.key.toLowerCase() === "u") {
+        // On the back of a not-yet-graded card, Undo just flips back to the
+        // front of that same card. Only on the front does it fall through
+        // to actually undoing the previous card's grade.
+        if (revealed) { setRevealed(false); return; }
+        undo.current();
+        return;
+      }
       if (e.key.toLowerCase() === "e") { setEditOpen(true); return; }
+      if (e.key.toLowerCase() === "b") {
+        if (current) onJumpToCard?.({ source: current.source, dbId: current.dbId });
+        return;
+      }
 
       if (e.code === "Space") {
         e.preventDefault();
@@ -1006,6 +1193,11 @@ function ReviewSession({ initialQueue, onExit }: { initialQueue: DueCard[]; onEx
       }
 
       if (!revealed) return;
+      if (e.key.toLowerCase() === "r" && current?.source === "hanzi") {
+        setRedoDrawing(true);
+        setRedoAttempt((n) => n + 1);
+        return;
+      }
       if (e.key === "1") grade.current("again");
       else if (e.key === "2") grade.current("hard");
       else if (e.key === "3") grade.current("good");
@@ -1013,7 +1205,7 @@ function ReviewSession({ initialQueue, onExit }: { initialQueue: DueCard[]; onEx
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [revealed, editOpen]);
+  }, [revealed, editOpen, current, onJumpToCard]);
 
   if (!current) {
     const nextIn = pending.length > 0 ? Math.max(0, Math.min(...pending.map((p) => p.dueAt)) - Date.now()) : null;
@@ -1036,44 +1228,94 @@ function ReviewSession({ initialQueue, onExit }: { initialQueue: DueCard[]; onEx
   const remainingDue = queue.length - remainingNew;
 
   return (
-    <>
-      <div className="w-full flex items-center justify-between">
+    <div className="fixed inset-0 z-30 flex flex-col overflow-hidden bg-zinc-100 dark:bg-zinc-950 px-4 sm:px-8 pt-4 sm:pt-8">
+      <div className="w-full shrink-0 flex items-center justify-between">
         <button
           onClick={onExit}
           className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
         >
           ← Decks
         </button>
-        <HotkeysPanel />
+        <div className="flex items-center gap-4">
+          <AudioControl />
+          <div className="hidden md:block">
+            <TrackpadToggleButton />
+          </div>
+          <div className="hidden md:block">
+            <HotkeysPanel />
+          </div>
+        </div>
       </div>
 
-      <div className="w-full min-h-[65vh] flex flex-col">
-        <div className="flex-1 flex flex-col items-center text-center px-4 pt-28">
-          <div className="max-w-xl">
-            <p className="text-3xl">{current.front}</p>
+      <div className="w-full flex-1 min-h-0 flex flex-col">
+        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center text-center px-4 py-4">
+          <div className="max-w-xl m-auto">
+            <p className="text-2xl text-center">
+              {current.source === "hanzi"
+                ? revealed
+                  ? pinyinFrontHeadline(current.sub, current.back)
+                  : current.back
+                : current.front}
+            </p>
 
             {!revealed && current.sentence && current.source !== "hanzi" && (
-              <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800 text-left">
+              <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800 text-center">
                 <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.sentence}</p>
               </div>
             )}
 
+            {current.source === "hanzi" && (
+              <div className="mt-6">
+                {revealed ? (
+                  redoDrawing ? (
+                    <HanziWritingBox
+                      key={redoAttempt}
+                      character={current.front}
+                      showHeader={false}
+                      showReference={false}
+                      traceOutline
+                      onComplete={() => setRedoDrawing(false)}
+                    />
+                  ) : (
+                    <HanziCharacterPreview character={current.front} />
+                  )
+                ) : (
+                  <HanziWritingBox
+                    character={current.front}
+                    showHeader={false}
+                    showReference={false}
+                    onComplete={handleWriteComplete}
+                  />
+                )}
+              </div>
+            )}
+
+            {revealed && current.components && (
+              <p className="mt-1.5 text-sm text-zinc-400 dark:text-zinc-500 text-center">{current.components}</p>
+            )}
+
             {revealed && (
-              <div className="mt-8 space-y-1.5 text-left">
-                <p className="text-sm flex items-center gap-2 flex-wrap">
-                  {current.sub && <span className="text-emerald-700 dark:text-emerald-500">{current.sub}</span>}
-                  {current.back && <span className="text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.back}</span>}
-                  <AudioButton src={current.audioUrl} label="Play pronunciation" />
-                </p>
-                {current.components && (
-                  <p className="text-xs text-zinc-400 dark:text-zinc-500">{current.components}</p>
+              <div className="mt-8 space-y-1.5 text-center animate-card-reveal-in">
+                {current.source !== "hanzi" && (current.sub || current.back) && (
+                  <p className="text-base flex items-center justify-center gap-2 flex-wrap">
+                    {current.sub && <span className="text-emerald-700 dark:text-emerald-500">{current.sub}</span>}
+                    {current.back && (
+                      <span className="text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.back}</span>
+                    )}
+                    <AudioButton src={current.audioUrl} label="Play pronunciation" />
+                  </p>
                 )}
                 {current.examples && (
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400 whitespace-pre-line">{current.examples}</p>
+                  <p className="text-base text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.examples}</p>
+                )}
+                {current.source === "hanzi" && current.audioUrl && (
+                  <div className="flex justify-center">
+                    <AudioButton src={current.audioUrl} label="Play pronunciation" />
+                  </div>
                 )}
                 {current.sentence && (
                   <div className="pt-4 mt-2 border-t border-zinc-200 dark:border-zinc-800 space-y-0.5">
-                    <p className="text-sm text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+                    <p className="text-sm text-zinc-700 dark:text-zinc-300 flex items-center justify-center gap-2">
                       <span>{current.sentence}</span>
                       <AudioButton src={current.sentenceAudioUrl} label="Play sentence audio" />
                     </p>
@@ -1091,7 +1333,7 @@ function ReviewSession({ initialQueue, onExit }: { initialQueue: DueCard[]; onEx
           </div>
         </div>
 
-        <div className="sticky bottom-0 bg-zinc-100 dark:bg-zinc-950 flex flex-col items-center gap-3 pt-4 pb-6 px-4">
+        <div className="shrink-0 bg-zinc-100 dark:bg-zinc-950 flex flex-col items-center gap-3 pt-4 pb-6 px-4">
           {saveError && <p className="text-xs text-red-500">{saveError}</p>}
 
           {!revealed ? (
@@ -1132,11 +1374,17 @@ function ReviewSession({ initialQueue, onExit }: { initialQueue: DueCard[]; onEx
         <EditPanel
           card={current}
           onClose={() => setEditOpen(false)}
-          onSave={(front, sub, back) => {
-            gradeCard(current.source, current.dbId, buildEditUpdates(current.source, front, sub, back)).catch((e) => {
+          onSave={(front, sub, back, components, examples) => {
+            gradeCard(current.source, current.dbId, buildEditUpdates(current.source, front, sub, back, components, examples)).catch((e) => {
               setSaveError(e instanceof Error ? e.message : "Failed to save edit.");
             });
-            setQueue((q) => q.map((c) => (c.id === current.id ? { ...c, front, sub, back } : c)));
+            setQueue((q) =>
+              q.map((c) =>
+                c.id === current.id
+                  ? { ...c, front, sub, back, ...(current.source === "hanzi" ? { components, examples } : {}) }
+                  : c
+              )
+            );
             setEditOpen(false);
           }}
           onPictureUpdated={(url) => {
@@ -1144,7 +1392,7 @@ function ReviewSession({ initialQueue, onExit }: { initialQueue: DueCard[]; onEx
           }}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -1152,14 +1400,22 @@ export default function FlashcardTab({
   cards,
   hsk3Coverage,
   wordsPhrases,
+  onJumpToCard,
+  onReviewingChange,
 }: {
   cards: HanziCard[];
   hsk3Coverage: Hsk3Coverage;
   wordsPhrases: WordPhrase[];
+  onJumpToCard?: (card: { source: DeckKey; dbId: number | string }) => void;
+  onReviewingChange?: (active: boolean) => void;
 }) {
   const [selectedDeck, setSelectedDeck] = useState<DeckKey | null>(null);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    onReviewingChange?.(selectedDeck !== null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDeck]);
 
   // Pulled from our own review_log table (the same store site-graded and
   // Anki-synced reviews both write to) rather than AnkiConnect — this is
@@ -1226,7 +1482,7 @@ export default function FlashcardTab({
 
   if (!selectedDeck) {
     return (
-      <div className="flex flex-col items-center gap-3">
+      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-3">
         <DeckMenu decks={decks} onSelect={setSelectedDeck} />
         {todayStats && todayStats.count > 0 && (
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -1253,5 +1509,9 @@ export default function FlashcardTab({
     );
   }
 
-  return <ReviewSession initialQueue={queue} onExit={() => setSelectedDeck(null)} key={selectedDeck} />;
+  return (
+    <TrackpadModeProvider key={selectedDeck}>
+      <ReviewSession initialQueue={queue} onExit={() => setSelectedDeck(null)} onJumpToCard={onJumpToCard} />
+    </TrackpadModeProvider>
+  );
 }

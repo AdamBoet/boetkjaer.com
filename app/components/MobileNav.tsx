@@ -37,6 +37,10 @@ export default function MobileNav() {
 
   useEffect(() => { setOpen(false); }, [pathname]);
 
+  // The Mandarin page uses the full mobile screen itself (own tab bar,
+  // review UI) — the shared header/hamburger would just eat space there.
+  if (pathname?.startsWith("/lab/hanzi")) return null;
+
   return (
     <div className="md:hidden">
       <div className="fixed top-0 left-0 right-0 z-40 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 px-4 py-3">
