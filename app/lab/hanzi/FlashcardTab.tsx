@@ -372,16 +372,23 @@ function buildQueue(
   items: { key: DeckKey; card: AnyCard }[],
   maxReviews: number,
   newCardsLimit: number
-): DueCard[] {
+): { queue: DueCard[]; pending: { card: DueCard; dueAt: number }[] } {
   const due: DueCard[] = [];
   const newOnes: DueCard[] = [];
+  const pending: { card: DueCard; dueAt: number }[] = [];
   for (const { key, card } of items) {
     if (!isNeverStudied(card.reps) && isLearning(card.type)) {
-      // Learning/relearning card: only surface it now if its step has
-      // actually elapsed — otherwise it stays hidden until its timer is up
-      // (matching Anki; the live session timer in ReviewSession handles
-      // resurfacing it once due, without needing a page reload).
-      if (isLearningCardDue(card.due)) due.push(toDueCard(key, card, 0, false));
+      // Learning/relearning card: only surfaces in the queue right now if
+      // its step has actually elapsed. One still cooling down isn't
+      // skipped, though — it's the *total* count of these that matters
+      // (the step delay is just an ordering mechanism, not a filter), so it
+      // goes into `pending` instead, where the same timer effect that
+      // resurfaces an in-session "Again" also picks it up once due.
+      if (isLearningCardDue(card.due)) {
+        due.push(toDueCard(key, card, 0, false));
+      } else {
+        pending.push({ card: toDueCard(key, card, 0, false), dueAt: (card.due ?? 0) * 1000 });
+      }
       continue;
     }
     const diff = dueDiffFrom(card);
@@ -391,7 +398,10 @@ function buildQueue(
       newOnes.push(toDueCard(key, card, null, true));
     }
   }
-  return [...shuffle(due).slice(0, maxReviews), ...shuffle(newOnes).slice(0, newCardsLimit)];
+  return {
+    queue: [...shuffle(due).slice(0, maxReviews), ...shuffle(newOnes).slice(0, newCardsLimit)],
+    pending,
+  };
 }
 
 // Counts shown in the deck menu — computed from our own data, not Anki.
@@ -745,7 +755,7 @@ function AudioControl() {
         value={Math.round(volume * 100)}
         onChange={handleVolumeChange}
         aria-label="Audio volume"
-        className="w-16 h-4 accent-zinc-500 dark:accent-zinc-400"
+        className="hidden sm:block w-16 h-4 accent-zinc-500 dark:accent-zinc-400"
       />
       <button
         onClick={() => setMuted(!muted)}
@@ -999,10 +1009,12 @@ export function buildEditUpdates(
 
 function ReviewSession({
   initialQueue,
+  initialPending,
   onExit,
   onJumpToCard,
 }: {
   initialQueue: DueCard[];
+  initialPending: { card: DueCard; dueAt: number }[];
   onExit: () => void;
   onJumpToCard?: (card: { source: DeckKey; dbId: number | string }) => void;
 }) {
@@ -1010,7 +1022,10 @@ function ReviewSession({
   // Learning/relearning cards that aren't due yet — resurfaced into `queue`
   // by the timer effect below once their step's delay elapses, mirroring
   // Anki interleaving learning cards back into the session automatically.
-  const [pending, setPending] = useState<{ card: DueCard; dueAt: number }[]>([]);
+  // Seeded with every such card in the deck (not just ones this session
+  // grades into cooldown) so the deck's full learning-card total always
+  // eventually surfaces, matching the deck menu's count.
+  const [pending, setPending] = useState<{ card: DueCard; dueAt: number }[]>(initialPending);
   const [revealed, setRevealed] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -1225,7 +1240,12 @@ function ReviewSession({
   }
 
   const remainingNew = queue.filter((c) => c.isNew).length;
-  const remainingDue = queue.length - remainingNew;
+  const remainingLearningInQueue = queue.filter((c) => !c.isNew && isLearning(c.type)).length;
+  // Total learning-card count, not just the ones currently past their
+  // cooldown — the still-cooling-down ones in `pending` will surface later
+  // in this same session regardless, so they still count toward the total.
+  const remainingLearning = remainingLearningInQueue + pending.length;
+  const remainingDue = queue.length - remainingNew - remainingLearningInQueue;
 
   return (
     <div className="fixed inset-0 z-30 flex flex-col overflow-hidden bg-zinc-100 dark:bg-zinc-950 px-4 sm:px-8 pt-4 sm:pt-8">
@@ -1237,6 +1257,16 @@ function ReviewSession({
           ← Decks
         </button>
         <div className="flex items-center gap-4">
+          <button
+            onClick={() => { if (revealed) setRevealed(false); else undo.current(); }}
+            aria-label="Undo"
+            title="Undo (U)"
+            className="md:hidden text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+              <path fillRule="evenodd" d="M7.793 2.232a.75.75 0 01-.025 1.06L3.622 7.25h10.128a5.5 5.5 0 010 11H10.5a.75.75 0 010-1.5h3.25a4 4 0 000-8H3.622l4.146 3.957a.75.75 0 01-1.036 1.085l-5.5-5.25a.75.75 0 010-1.085l5.5-5.25a.75.75 0 011.06.025z" clipRule="evenodd" />
+            </svg>
+          </button>
           <AudioControl />
           <div className="hidden md:block">
             <TrackpadToggleButton />
@@ -1297,7 +1327,7 @@ function ReviewSession({
             {revealed && (
               <div className="mt-8 space-y-1.5 text-center animate-card-reveal-in">
                 {current.source !== "hanzi" && (current.sub || current.back) && (
-                  <p className="text-base flex items-center justify-center gap-2 flex-wrap">
+                  <p className="text-2xl flex items-center justify-center gap-2 flex-wrap">
                     {current.sub && <span className="text-emerald-700 dark:text-emerald-500">{current.sub}</span>}
                     {current.back && (
                       <span className="text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.back}</span>
@@ -1306,7 +1336,7 @@ function ReviewSession({
                   </p>
                 )}
                 {current.examples && (
-                  <p className="text-base text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.examples}</p>
+                  <p className="text-2xl text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.examples}</p>
                 )}
                 {current.source === "hanzi" && current.audioUrl && (
                   <div className="flex justify-center">
@@ -1341,6 +1371,12 @@ function ReviewSession({
               <p className="text-sm">
                 <span className="text-blue-500 font-medium">{remainingNew}</span>
                 {" + "}
+                {remainingLearning > 0 && (
+                  <>
+                    <span className="text-red-500 dark:text-red-400 font-medium">{remainingLearning}</span>
+                    {" + "}
+                  </>
+                )}
                 <span className="text-emerald-600 dark:text-emerald-500 font-medium underline">{remainingDue}</span>
               </p>
               <button
@@ -1467,8 +1503,8 @@ export default function FlashcardTab({
     [cards, hsk3Known, randomWords, idioms, mounted]
   );
 
-  const queue = useMemo(() => {
-    if (!selectedDeck) return [];
+  const { queue, pending: initialPending } = useMemo(() => {
+    if (!selectedDeck) return { queue: [], pending: [] };
     const items =
       selectedDeck === "hanzi"
         ? cards.map((card) => ({ key: "hanzi" as const, card }))
@@ -1495,7 +1531,7 @@ export default function FlashcardTab({
     );
   }
 
-  if (queue.length === 0) {
+  if (queue.length === 0 && initialPending.length === 0) {
     return (
       <div className="space-y-4 max-w-xl">
         <button onClick={() => setSelectedDeck(null)} className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">
@@ -1511,7 +1547,12 @@ export default function FlashcardTab({
 
   return (
     <TrackpadModeProvider key={selectedDeck}>
-      <ReviewSession initialQueue={queue} onExit={() => setSelectedDeck(null)} onJumpToCard={onJumpToCard} />
+      <ReviewSession
+        initialQueue={queue}
+        initialPending={initialPending}
+        onExit={() => setSelectedDeck(null)}
+        onJumpToCard={onJumpToCard}
+      />
     </TrackpadModeProvider>
   );
 }

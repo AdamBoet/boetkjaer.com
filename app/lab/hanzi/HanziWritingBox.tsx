@@ -411,15 +411,15 @@ export default function HanziWritingBox({
       setLocked(isLocked);
       if (!isLocked) {
         endCurrentStroke();
-        // Only treat this as the user genuinely exiting trackpad mode (Esc,
-        // tab switch, etc.) when this box is still mounted. React nulls out
-        // targetRef.current as soon as this instance unmounts (e.g. reveal
-        // swaps the box for the static character preview, which has no
-        // pointer-lock target), and the browser auto-releases the lock on
-        // that detach — that's not the user asking to exit, and disabling
-        // the *persisted* preference here would stop it from carrying over
-        // to the next writing box (e.g. redo's box) that mounts afterward.
-        if (targetRef.current) setTrackpadModeValue(false);
+        // Deliberately NOT disabling trackpad mode here. Losing the OS-level
+        // lock happens for lots of benign, non-"user wants out" reasons —
+        // this box unmounting (card change, reveal, redo), a re-lock attempt
+        // landing just outside the activation window, momentary focus loss —
+        // and treating every one of those as an exit was exactly what kept
+        // silently flipping the preference off. Turning trackpad mode off is
+        // now only ever a direct, manual action: the Escape keydown handler
+        // below, or the T hotkey / header toggle button (both call
+        // setTrackpadModeValue directly, never from here).
       }
     }
     document.addEventListener("pointerlockchange", handlePointerLockChange);

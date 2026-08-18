@@ -319,6 +319,14 @@ export default function HanziDashboard({
         if (existing) return { ...existing, ...content, ...stats };
         return { ...content, note_id: note.noteId, ...stats } as HanziCard;
       });
+      // New cards are now authored straight into Supabase and never touch
+      // Anki (see the "Anki flashcards" project) — they'll never show up in
+      // `allNotes`. Building `updatedCards` purely from Anki's notes would
+      // silently drop every one of them from the site the moment this
+      // background sync runs. Keep any card Anki doesn't know about as-is.
+      const noteIdsInAnki = new Set(allNotes.map((n) => n.noteId));
+      const siteOnlyCards = cards.filter((c) => !noteIdsInAnki.has(c.note_id));
+      updatedCards.push(...siteOnlyCards);
       updatedCards.sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
 
       const learnedCount = updatedCards.filter((c) => (c.reps ?? 0) > 0).length;
