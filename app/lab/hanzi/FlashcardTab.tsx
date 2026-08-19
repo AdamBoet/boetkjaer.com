@@ -178,16 +178,26 @@ function scheduleCard(
     }
   }
 
-  // Review stage (graduated, type 2).
+  // Review stage (graduated, type 2). Hard/Good/Easy's multipliers (1.2x,
+  // factor/1000x, factor/1000*1.3x) are already ranked hard < good < easy
+  // before rounding, but rounding each independently can still collide two
+  // of them onto the same day count once `factor` has drifted down near its
+  // floor (e.g. interval=4 -> hard 4.8->5, good 5.2->5). Round all three
+  // together and force each to be strictly more than the last, so the
+  // buttons never show — or schedule — the same interval.
+  if (grade === "again") {
+    return { interval, factor: Math.max(MIN_FACTOR, factor - 200), type: 3, learningStep: 0, dueInMin: RELEARNING_STEPS_MIN[0] };
+  }
+  const hardDays = Math.max(1, Math.round(interval * 1.2));
+  const goodDays = Math.max(hardDays + 1, Math.round(interval * (factor / 1000)));
+  const easyDays = Math.max(goodDays + 1, Math.round(interval * (factor / 1000) * 1.3));
   switch (grade) {
-    case "again":
-      return { interval, factor: Math.max(MIN_FACTOR, factor - 200), type: 3, learningStep: 0, dueInMin: RELEARNING_STEPS_MIN[0] };
     case "hard":
-      return { interval: Math.max(1, Math.round(interval * 1.2)), factor: Math.max(MIN_FACTOR, factor - 150), type: 2, learningStep: null, dueInMin: null };
+      return { interval: hardDays, factor: Math.max(MIN_FACTOR, factor - 150), type: 2, learningStep: null, dueInMin: null };
     case "good":
-      return { interval: Math.max(1, Math.round(interval * (factor / 1000))), factor, type: 2, learningStep: null, dueInMin: null };
+      return { interval: goodDays, factor, type: 2, learningStep: null, dueInMin: null };
     case "easy":
-      return { interval: Math.max(1, Math.round(interval * (factor / 1000) * 1.3)), factor: factor + 150, type: 2, learningStep: null, dueInMin: null };
+      return { interval: easyDays, factor: factor + 150, type: 2, learningStep: null, dueInMin: null };
   }
 }
 
@@ -1280,6 +1290,11 @@ function ReviewSession({
       <div className="w-full flex-1 min-h-0 flex flex-col">
         <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center text-center px-4 py-4">
           <div className="max-w-xl m-auto">
+            {!revealed && current.isNew && (
+              <p className="mb-2 text-xs font-semibold tracking-widest text-emerald-500 dark:text-emerald-400 [text-shadow:0_0_10px_rgba(16,185,129,0.85)]">
+                NEW
+              </p>
+            )}
             <p className="text-2xl text-center">
               {current.source === "hanzi"
                 ? revealed
@@ -1314,6 +1329,7 @@ function ReviewSession({
                     character={current.front}
                     showHeader={false}
                     showReference={false}
+                    traceOutline={current.isNew}
                     onComplete={handleWriteComplete}
                   />
                 )}

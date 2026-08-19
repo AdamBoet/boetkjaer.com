@@ -554,7 +554,7 @@ export default function HanziWritingBox({
         // entirely (showReference=false), in which case the outline would be
         // the only way to see the character early.
         showOutline: isMobileRef.current
-          ? showReference && helpSettingsRef.current.showOutline
+          ? traceOutline || (showReference && helpSettingsRef.current.showOutline)
           : traceOutline,
         showCharacter: false,
         // Distinct from the reference box's gray so it's unmistakably the
@@ -632,30 +632,37 @@ export default function HanziWritingBox({
           <div className="flex justify-center">
           <div className="flex flex-wrap items-start justify-center gap-6">
             <div className="space-y-1.5">
-              <div ref={wrapperRef} style={{ width: 280, height: 280 }}>
-                <div
-                  ref={targetRef}
-                  className={`relative touch-none rounded-xl border bg-white transition-shadow duration-300 ${
-                    doneFlash
-                      ? "border-emerald-400 ring-4 ring-emerald-500/60 shadow-[0_0_25px_6px_rgba(16,185,129,0.55)]"
-                      : mistakeFlash
-                      ? "border-red-400 ring-4 ring-red-500/50 shadow-[0_0_25px_6px_rgba(239,68,68,0.45)]"
-                      : trackpadMode
-                      ? "cursor-none border-blue-400 ring-4 ring-blue-500/60 shadow-[0_0_25px_6px_rgba(59,130,246,0.55)]"
-                      : "border-zinc-200 dark:border-zinc-800"
-                  }`}
-                  style={{ width: 280, height: 280 }}
-                />
+              <div
+                ref={wrapperRef}
+                className={`relative overflow-hidden touch-none rounded-xl border bg-white transition-shadow duration-300 ${
+                  doneFlash
+                    ? "border-emerald-400 ring-4 ring-emerald-500/60 shadow-[0_0_25px_6px_rgba(16,185,129,0.55)]"
+                    : mistakeFlash
+                    ? "border-red-400 ring-4 ring-red-500/50 shadow-[0_0_25px_6px_rgba(239,68,68,0.45)]"
+                    : trackpadMode
+                    ? "cursor-none border-blue-400 ring-4 ring-blue-500/60 shadow-[0_0_25px_6px_rgba(59,130,246,0.55)]"
+                    : "border-zinc-200 dark:border-zinc-800"
+                }`}
+                style={{ width: 280, height: 280 }}
+              >
+                {/* Tian zi ge guide cross — behind the (transparent) writer
+                    SVG, purely a placement aid, never intercepts input. */}
+                <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 border-l border-dashed border-zinc-200 dark:border-zinc-700 pointer-events-none" />
+                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-t border-dashed border-zinc-200 dark:border-zinc-700 pointer-events-none" />
+                <div ref={targetRef} className="absolute inset-0" style={{ width: 280, height: 280 }} />
               </div>
             </div>
 
             {showReference && (
               <div className="hidden md:block space-y-1.5">
                 <div
-                  ref={referenceTargetRef}
-                  className="relative rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white"
+                  className="relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white"
                   style={{ width: 280, height: 280 }}
-                />
+                >
+                  <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 border-l border-dashed border-zinc-200 dark:border-zinc-700 pointer-events-none" />
+                  <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-t border-dashed border-zinc-200 dark:border-zinc-700 pointer-events-none" />
+                  <div ref={referenceTargetRef} className="absolute inset-0" style={{ width: 280, height: 280 }} />
+                </div>
               </div>
             )}
           </div>
