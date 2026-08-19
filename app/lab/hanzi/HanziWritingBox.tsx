@@ -290,6 +290,15 @@ export default function HanziWritingBox({
   // Relative-movement drawing state (trackpad mode)
   const virtualPos = useRef({ x: CANVAS_SIZE / 2, y: CANVAS_SIZE / 2 });
   const strokeActive = useRef(false);
+  // hanzi-writer's quiz() is async — its promise only resolves once the
+  // character's stroke data has actually loaded, which is when virtualPos
+  // gets snapped from the arbitrary canvas-center guess to the real
+  // first-stroke start (below). In trackpad mode, movement events keep
+  // firing the instant the pointer lock re-engages — far sooner than a
+  // fresh character's data can load — so without this guard the very first
+  // stroke on a new card would start from the wrong position and get
+  // rejected as a mistake every time.
+  const quizReadyRef = useRef(false);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -465,6 +474,13 @@ export default function HanziWritingBox({
     if (!locked) return;
 
     function handleMouseMove(e: MouseEvent) {
+      // Ignore movement until the quiz has actually finished loading this
+      // character's stroke data — starting a stroke any earlier would use
+      // the placeholder canvas-center position instead of the real expected
+      // start, getting flagged as a mistake. The trackpad's own relative
+      // motion isn't lost, just not drawn with yet; the pen simply starts
+      // moving for real the moment loading finishes.
+      if (!quizReadyRef.current) return;
       const quiz = getInternalQuiz(writerRef.current);
       if (!quiz) return;
 
@@ -509,6 +525,7 @@ export default function HanziWritingBox({
     setDoneFlash(false);
     setLoadError(false);
     strokeActive.current = false;
+    quizReadyRef.current = false;
     virtualPos.current = { x: CANVAS_SIZE / 2, y: CANVAS_SIZE / 2 };
 
     resetReferenceStrokes(referenceWriterRef.current);
@@ -541,6 +558,7 @@ export default function HanziWritingBox({
         // rather than the arbitrary center-of-canvas guess.
         const start = expectedNextStrokeStart(writer);
         if (start) virtualPos.current = start;
+        quizReadyRef.current = true;
         // hanzi-writer's quiz always reveals its own clean stroke render
         // here regardless of showCharacter. When there's a separate
         // reference box (showReference), that box is the answer key, so
