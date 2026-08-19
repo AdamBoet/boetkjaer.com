@@ -7,48 +7,22 @@ import { useTrackpadModeContext } from "./TrackpadModeContext";
 const TRACKPAD_MODE_KEY = "hanziTrackpadMode";
 const CANVAS_SIZE = 280;
 
-// Tian zi ge guide cross — a dashed gradient (via inline style, not a
-// Tailwind arbitrary-value class) so the dash/gap spacing (5px dash, 10px
-// gap) is under our control instead of the browser's fairly tight default
-// dashed-border pattern. A class built from string interpolation only
-// exists at runtime; Tailwind's build-time scanner needs the complete class
-// to appear literally in source to generate CSS for it, so that approach
-// silently produced no styles at all. Rendered as light/dark variant pairs
-// toggled by plain (non-interpolated, so still scannable) `dark:` classes,
-// since inline styles can't respond to the dark-mode selector themselves.
-function dashGradient(direction: "to bottom" | "to right", color: string): React.CSSProperties {
-  return { backgroundImage: `repeating-linear-gradient(${direction}, ${color} 0, ${color} 5px, transparent 5px, transparent 15px)` };
-}
-
-export function GridLineV() {
-  return (
-    <>
-      <div
-        className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-px pointer-events-none dark:hidden"
-        style={dashGradient("to bottom", "#e4e4e7")}
-      />
-      <div
-        className="hidden dark:block absolute inset-y-0 left-1/2 -translate-x-1/2 w-px pointer-events-none"
-        style={dashGradient("to bottom", "#3f3f46")}
-      />
-    </>
-  );
-}
-
-export function GridLineH() {
-  return (
-    <>
-      <div
-        className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px pointer-events-none dark:hidden"
-        style={dashGradient("to right", "#e4e4e7")}
-      />
-      <div
-        className="hidden dark:block absolute inset-x-0 top-1/2 -translate-y-1/2 h-px pointer-events-none"
-        style={dashGradient("to right", "#3f3f46")}
-      />
-    </>
-  );
-}
+// Tian zi ge guide cross, painted as the box's own CSS background rather
+// than separate sibling elements. A `background-image` is guaranteed by the
+// CSS painting order to render behind *all* child content, including
+// whatever HanziWriter's own SVG draws inside the target div — sibling divs
+// depended on DOM order to stay behind the ink instead, which is exactly
+// what let the dashed pattern bleed into the drawn stroke. These boxes are
+// always `bg-white` regardless of site theme, so one static color is enough.
+export const GRID_BACKGROUND_STYLE: React.CSSProperties = {
+  backgroundColor: "#ffffff",
+  backgroundImage:
+    "repeating-linear-gradient(to bottom, #e4e4e7 0, #e4e4e7 5px, transparent 5px, transparent 15px), " +
+    "repeating-linear-gradient(to right, #e4e4e7 0, #e4e4e7 5px, transparent 5px, transparent 15px)",
+  backgroundSize: "1px 100%, 100% 1px",
+  backgroundPosition: "50% 0, 0 50%",
+  backgroundRepeat: "no-repeat, no-repeat",
+};
 // hanzi-writer's own built-in defaults (confirmed from its source) — used as
 // our baseline rather than guessed numbers.
 const BASE_LENIENCY = 1;
@@ -695,7 +669,7 @@ export default function HanziWritingBox({
             <div className="space-y-1.5">
               <div
                 ref={wrapperRef}
-                className={`relative overflow-hidden touch-none rounded-xl border bg-white transition-shadow duration-300 ${
+                className={`relative overflow-hidden touch-none rounded-xl border transition-shadow duration-300 ${
                   doneFlash
                     ? "border-emerald-400 ring-4 ring-emerald-500/60 shadow-[0_0_25px_6px_rgba(16,185,129,0.55)]"
                     : mistakeFlash
@@ -704,12 +678,8 @@ export default function HanziWritingBox({
                     ? "cursor-none border-blue-400 ring-4 ring-blue-500/60 shadow-[0_0_25px_6px_rgba(59,130,246,0.55)]"
                     : "border-zinc-200 dark:border-zinc-800"
                 }`}
-                style={{ width: 280, height: 280 }}
+                style={{ width: 280, height: 280, ...GRID_BACKGROUND_STYLE }}
               >
-                {/* Tian zi ge guide cross — behind the (transparent) writer
-                    SVG, purely a placement aid, never intercepts input. */}
-                <GridLineV />
-                <GridLineH />
                 <div ref={targetRef} className="absolute inset-0" style={{ width: 280, height: 280 }} />
               </div>
             </div>
@@ -717,11 +687,9 @@ export default function HanziWritingBox({
             {showReference && (
               <div className="hidden md:block space-y-1.5">
                 <div
-                  className="relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white"
-                  style={{ width: 280, height: 280 }}
+                  className="relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800"
+                  style={{ width: 280, height: 280, ...GRID_BACKGROUND_STYLE }}
                 >
-                  <GridLineV />
-                  <GridLineH />
                   <div ref={referenceTargetRef} className="absolute inset-0" style={{ width: 280, height: 280 }} />
                 </div>
               </div>
