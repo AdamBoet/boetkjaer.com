@@ -633,14 +633,6 @@ export default function BrowseTab({
   const sorted = useMemo(() => {
     const out = [...filtered];
     out.sort((a, b) => {
-      // Cards without a rank (HSK vocab, words & phrases) always sort after
-      // ranked ones, regardless of sort direction, rather than flipping to
-      // the front when sorting descending — so this skips the shared
-      // `* sortDir` below entirely.
-      if (sortKey === "rank" && (a.rank == null || b.rank == null)) {
-        if (a.rank == null && b.rank == null) return 0;
-        return a.rank == null ? 1 : -1;
-      }
       let cmp = 0;
       switch (sortKey) {
         case "front":
@@ -662,7 +654,12 @@ export default function BrowseTab({
           cmp = (a.dueDiff ?? Infinity) - (b.dueDiff ?? Infinity);
           break;
         case "rank":
-          cmp = (a.rank as number) - (b.rank as number);
+          // Cards without a rank (HSK vocab, words & phrases) sort after
+          // ranked ones when ascending, before them when descending — like
+          // any other column, instead of always pinning them to one end
+          // regardless of direction (which made toggling do nothing for
+          // most of the table, since ranked hanzi cards are the minority).
+          cmp = (a.rank ?? Infinity) - (b.rank ?? Infinity);
           break;
       }
       return cmp * sortDir;

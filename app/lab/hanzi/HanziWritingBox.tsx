@@ -6,6 +6,23 @@ import { useTrackpadModeContext } from "./TrackpadModeContext";
 
 const TRACKPAD_MODE_KEY = "hanziTrackpadMode";
 const CANVAS_SIZE = 280;
+
+// Tian zi ge guide cross — a dashed gradient rather than border-dashed so the
+// dash/gap spacing (5px dash, 10px gap) is under our control instead of the
+// browser's fairly tight default dashed-border pattern.
+const GRID_DASH = "#e4e4e7 0,#e4e4e7 5px,transparent 5px,transparent 15px";
+const GRID_DASH_DARK = "#3f3f46 0,#3f3f46 5px,transparent 5px,transparent 15px";
+// Exported so HanziCharacterPreview (the post-reveal static box) can draw
+// the same guide cross — the grid should look identical no matter which box
+// component happens to be showing.
+export const GRID_LINE_V =
+  `absolute inset-y-0 left-1/2 -translate-x-1/2 w-px pointer-events-none ` +
+  `[background-image:repeating-linear-gradient(to_bottom,${GRID_DASH})] ` +
+  `dark:[background-image:repeating-linear-gradient(to_bottom,${GRID_DASH_DARK})]`;
+export const GRID_LINE_H =
+  `absolute inset-x-0 top-1/2 -translate-y-1/2 h-px pointer-events-none ` +
+  `[background-image:repeating-linear-gradient(to_right,${GRID_DASH})] ` +
+  `dark:[background-image:repeating-linear-gradient(to_right,${GRID_DASH_DARK})]`;
 // hanzi-writer's own built-in defaults (confirmed from its source) — used as
 // our baseline rather than guessed numbers.
 const BASE_LENIENCY = 1;
@@ -647,8 +664,8 @@ export default function HanziWritingBox({
               >
                 {/* Tian zi ge guide cross — behind the (transparent) writer
                     SVG, purely a placement aid, never intercepts input. */}
-                <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 border-l border-dashed border-zinc-200 dark:border-zinc-700 pointer-events-none" />
-                <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-t border-dashed border-zinc-200 dark:border-zinc-700 pointer-events-none" />
+                <div className={GRID_LINE_V} />
+                <div className={GRID_LINE_H} />
                 <div ref={targetRef} className="absolute inset-0" style={{ width: 280, height: 280 }} />
               </div>
             </div>

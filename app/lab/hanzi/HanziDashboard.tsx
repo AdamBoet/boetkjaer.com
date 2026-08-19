@@ -594,6 +594,11 @@ export default function HanziDashboard({
           hsk3Coverage={hsk3Coverage}
           wordsPhrases={wordsPhrases}
           onJumpToCard={(c) => {
+            // Jumping to Browse mid-review unmounts FlashcardTab (it only
+            // renders while tab === "flashcards"), so nothing else would
+            // ever flip `reviewing` back off — leaving the shared tab bar
+            // permanently hidden with no way to navigate anywhere else.
+            setReviewing(false);
             setFocusCard(c);
             setTab("browse");
           }}

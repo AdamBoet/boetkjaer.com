@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import HanziWriter from "hanzi-writer";
+import { GRID_LINE_V, GRID_LINE_H } from "./HanziWritingBox";
 
 // A static, already-filled-in rendering of a character — no quiz, no
 // animation, just the finished glyph. Used on the back of a hanzi flashcard
@@ -28,10 +29,13 @@ export default function HanziCharacterPreview({ character }: { character: string
   return (
     <div className="flex justify-center">
       <div
-        ref={targetRef}
-        className="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white shrink-0"
+        className="relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white shrink-0"
         style={{ width: 280, height: 280 }}
-      />
+      >
+        <div className={GRID_LINE_V} />
+        <div className={GRID_LINE_H} />
+        <div ref={targetRef} className="absolute inset-0" style={{ width: 280, height: 280 }} />
+      </div>
     </div>
   );
 }
