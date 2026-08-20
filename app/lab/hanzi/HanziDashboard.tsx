@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useTheme } from "next-themes";
 import { type HanziCard } from "./CharacterGrid";
-import WritingPractice from "./WritingPractice";
 import Hsk3Grid, { type Hsk3Coverage } from "./Hsk3Grid";
 import FlashcardTab, { type WordPhrase, type DeckKey, type CardStatPatch } from "./FlashcardTab";
 import HanziTab from "./HanziTab";
@@ -141,7 +140,7 @@ export default function HanziDashboard({
   const [ankiUrl, setAnkiUrl] = useState("http://localhost:8765");
   const [deckName, setDeckName] = useState("Mandarin::汉字 writing");
   const settingsRef = useRef<HTMLDivElement>(null);
-  const [tab, setTab] = useState<"flashcards" | "hanzi" | "hsk3" | "practice" | "browse" | "stats">("flashcards");
+  const [tab, setTab] = useState<"flashcards" | "hanzi" | "hsk3" | "browse" | "stats">("flashcards");
   // Bridges the flashcard review's "open in Browse" shortcut (B) to the
   // Browse tab, which reads it once, jumps to that row, then clears it.
   const [focusCard, setFocusCard] = useState<{ source: DeckKey; dbId: number | string } | null>(null);
@@ -599,7 +598,7 @@ export default function HanziDashboard({
     <div className="w-full space-y-8 -mt-20 pt-4 md:mt-0 md:pt-0">
       {!reviewing && (
         <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 border-b border-zinc-200 dark:border-zinc-800">
-          {(["flashcards", "hanzi", "hsk3", "practice", "browse", "stats"] as const).map((t) => (
+          {(["flashcards", "hanzi", "hsk3", "browse", "stats"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -615,8 +614,6 @@ export default function HanziDashboard({
                 ? "Hanzi"
                 : t === "hsk3"
                 ? "HSK 3.0"
-                : t === "practice"
-                ? "Practice writing"
                 : t === "browse"
                 ? "Browse"
                 : "Statistics"}
@@ -643,8 +640,6 @@ export default function HanziDashboard({
           onCardUpdated={handleCardUpdated}
         />
       )}
-
-      {tab === "practice" && <WritingPractice cards={cards} />}
 
       {tab === "hsk3" && (
         <div className="space-y-4">
