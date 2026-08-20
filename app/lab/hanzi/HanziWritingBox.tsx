@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import HanziWriter from "hanzi-writer";
-import { useTrackpadModeContext } from "./TrackpadModeContext";
+import { useTrackpadModeContext, TRACKPAD_CHANGED_EVENT } from "./TrackpadModeContext";
 
 const TRACKPAD_MODE_KEY = "hanziTrackpadMode";
 const CANVAS_SIZE = 280;
@@ -235,7 +235,7 @@ export default function HanziWritingBox({
   const [locked, setLocked] = useState(false);
   const trackpadModeRef = useRef(trackpadMode);
   trackpadModeRef.current = trackpadMode;
-  const { reportState: reportTrackpadState, registerToggleHandler } = useTrackpadModeContext();
+  const { registerToggleHandler } = useTrackpadModeContext();
 
   // Always call the latest onComplete — the writer-creation effect below is
   // keyed only on `character`, so a stale closure would otherwise capture
@@ -304,7 +304,6 @@ export default function HanziWritingBox({
   useEffect(() => {
     const savedTrackpad = localStorage.getItem(TRACKPAD_MODE_KEY) === "1";
     setTrackpadMode(savedTrackpad);
-    reportTrackpadState(savedTrackpad);
     setTrackpadSettings(loadJSON(TRACKPAD_SETTINGS_KEY, DEFAULT_TRACKPAD_SETTINGS));
     setHelpSettings(loadJSON(HELP_SETTINGS_KEY, DEFAULT_HELP_SETTINGS));
     // Every new card (and every redo, via its remount key) mounts a fresh
@@ -333,8 +332,8 @@ export default function HanziWritingBox({
   // from an effect or timer.
   function setTrackpadModeValue(next: boolean) {
     setTrackpadMode(next);
-    reportTrackpadState(next);
     localStorage.setItem(TRACKPAD_MODE_KEY, next ? "1" : "0");
+    window.dispatchEvent(new Event(TRACKPAD_CHANGED_EVENT));
     if (next) {
       if (document.pointerLockElement !== targetRef.current) {
         targetRef.current?.requestPointerLock();
