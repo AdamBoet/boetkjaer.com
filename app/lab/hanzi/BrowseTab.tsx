@@ -24,6 +24,34 @@ import {
 
 type SortKey = "front" | "deck" | "status" | "interval" | "reps" | "due" | "rank";
 type ColumnKey = SortKey;
+// An ordered list rather than a single {key, dir} — clicking a column that
+// isn't already active appends it as a new tiebreaker instead of replacing
+// whatever's already sorted, so multiple columns can be sorted at once
+// (first entry = highest priority). Clicking an already-active column
+// cycles its own direction in place; clicking it a third time removes it.
+type SortSpec = { key: SortKey; dir: 1 | -1 };
+
+function compareByKey(a: Row, b: Row, key: SortKey): number {
+  switch (key) {
+    case "front":
+      return a.front.localeCompare(b.front, "zh");
+    case "deck":
+      return DECK_LABELS[a.source].localeCompare(DECK_LABELS[b.source]);
+    case "status":
+      return a.status.localeCompare(b.status);
+    case "interval":
+      return a.interval - b.interval;
+    case "reps":
+      return a.reps - b.reps;
+    case "due":
+      return (a.dueDiff ?? Infinity) - (b.dueDiff ?? Infinity);
+    case "rank":
+      // The caller special-cases either side being unranked (see the sort
+      // loop below) — by the time this runs for "rank", both are guaranteed
+      // to have a real value.
+      return a.rank! - b.rank!;
+  }
+}
 
 const COLUMN_LABELS: Record<ColumnKey, string> = {
   front: "Card",
@@ -67,8 +95,7 @@ interface SavedView {
   deckFilter: DeckKey | "all";
   levelFilter: string | null;
   statusFilter: Status | "all";
-  sortKey: SortKey;
-  sortDir: 1 | -1;
+  sorts: SortSpec[];
 }
 
 function loadView(): SavedView | null {
@@ -185,22 +212,22 @@ function FilterChip({
 // Hoisting it keeps the DOM node stable across re-renders so clicks work.
 function HeaderCell({
   colKey,
-  sortKey,
-  sortDir,
+  sorts,
   isDragging,
   headerRefs,
   onPointerDown,
   onSortClick,
 }: {
   colKey: ColumnKey;
-  sortKey: SortKey;
-  sortDir: 1 | -1;
+  sorts: SortSpec[];
   isDragging: boolean;
   headerRefs: React.MutableRefObject<Partial<Record<ColumnKey, HTMLDivElement>>>;
   onPointerDown: (e: React.PointerEvent) => void;
   onSortClick: () => void;
 }) {
   const align = COLUMN_ALIGN[colKey];
+  const sortIdx = sorts.findIndex((s) => s.key === colKey);
+  const active = sortIdx !== -1 ? sorts[sortIdx] : null;
   return (
     <div
       ref={(el) => {
@@ -223,7 +250,14 @@ function HeaderCell({
         }`}
       >
         {COLUMN_LABELS[colKey]}
-        {sortKey === colKey && <span>{sortDir === 1 ? "↑" : "↓"}</span>}
+        {active && (
+          <span className="inline-flex items-center gap-0.5">
+            {active.dir === 1 ? "↑" : "↓"}
+            {/* Only shown once a second column is also active, so a single
+                sort doesn't get a redundant "1" badge. */}
+            {sorts.length > 1 && <span className="text-[9px] tabular-nums">{sortIdx + 1}</span>}
+          </span>
+        )}
       </button>
     </div>
   );
@@ -514,8 +548,7 @@ export default function BrowseTab({
   const [levelFilter, setLevelFilter] = useState<string | null>(null);
   const [hsk3Expanded, setHsk3Expanded] = useState(true);
   const [statusFilter, setStatusFilter] = useState<Status | "all">("all");
-  const [sortKey, setSortKey] = useState<SortKey>("due");
-  const [sortDir, setSortDir] = useState<1 | -1>(1);
+  const [sorts, setSorts] = useState<SortSpec[]>([{ key: "due", dir: 1 }]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [overrides, setOverrides] = useState<Record<string, Partial<DueCard>>>({});
   const tableRef = useRef<HTMLDivElement>(null);
@@ -576,16 +609,15 @@ export default function BrowseTab({
       setDeckFilter(saved.deckFilter);
       setLevelFilter(saved.levelFilter);
       setStatusFilter(saved.statusFilter);
-      setSortKey(saved.sortKey);
-      setSortDir(saved.sortDir);
+      setSorts(saved.sorts);
     }
     setViewHydrated(true);
   }, []);
 
   useEffect(() => {
     if (!viewHydrated) return;
-    localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify({ deckFilter, levelFilter, statusFilter, sortKey, sortDir }));
-  }, [viewHydrated, deckFilter, levelFilter, statusFilter, sortKey, sortDir]);
+    localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify({ deckFilter, levelFilter, statusFilter, sorts }));
+  }, [viewHydrated, deckFilter, levelFilter, statusFilter, sorts]);
 
   useEffect(() => {
     if (!columnsHydrated) return;
@@ -724,46 +756,26 @@ export default function BrowseTab({
   }, [rows, deckFilter, levelFilter, statusFilter, query]);
 
   const sorted = useMemo(() => {
+    if (sorts.length === 0) return filtered;
     const out = [...filtered];
     out.sort((a, b) => {
-      let cmp = 0;
-      switch (sortKey) {
-        case "front":
-          cmp = a.front.localeCompare(b.front, "zh");
-          break;
-        case "deck":
-          cmp = DECK_LABELS[a.source].localeCompare(DECK_LABELS[b.source]);
-          break;
-        case "status":
-          cmp = a.status.localeCompare(b.status);
-          break;
-        case "interval":
-          cmp = a.interval - b.interval;
-          break;
-        case "reps":
-          cmp = a.reps - b.reps;
-          break;
-        case "due":
-          cmp = (a.dueDiff ?? Infinity) - (b.dueDiff ?? Infinity);
-          break;
-        case "rank":
-          // Cards without a rank (HSK vocab, words & phrases) sort after
-          // ranked ones when ascending, before them when descending — like
-          // any other column, instead of always pinning them to one end
-          // regardless of direction. Using Infinity as the fallback here
-          // produced NaN (Infinity - Infinity) whenever both sides were
-          // unranked — which is most of the table, since ranked hanzi cards
-          // are the minority — and Array.sort silently no-ops on a NaN
-          // comparator result, so toggling direction visibly did nothing
-          // for the vast majority of rows. A large finite sentinel avoids
-          // that entirely: MAX_SAFE_INTEGER - MAX_SAFE_INTEGER is a normal 0.
-          cmp = (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER);
-          break;
+      for (const { key, dir } of sorts) {
+        let cmp: number;
+        if (key === "rank" && (a.rank == null || b.rank == null)) {
+          // Unranked cards (HSK vocab, words & phrases — the majority of
+          // the table) don't have a real position to sort by, so they stay
+          // parked at the end regardless of direction, rather than flipping
+          // to the front on descending like a normal numeric column would.
+          cmp = a.rank == null && b.rank == null ? 0 : a.rank == null ? 1 : -1;
+        } else {
+          cmp = compareByKey(a, b, key) * dir;
+        }
+        if (cmp !== 0) return cmp;
       }
-      return cmp * sortDir;
+      return 0;
     });
     return out;
-  }, [filtered, sortKey, sortDir]);
+  }, [filtered, sorts]);
 
   // Only the rows actually scrolled into view get mounted — with several
   // thousand cards, rendering every <tr> at once was what made the tab lag.
@@ -825,12 +837,21 @@ export default function BrowseTab({
     onFocusHandled?.();
   }, [sorted, rowVirtualizer, onFocusHandled]);
 
+  // Cycles a column through ascending -> descending -> unsorted, same as a
+  // single-column sort would, but without disturbing any other column's
+  // active sort — clicking a not-yet-active column appends it as the
+  // lowest-priority tiebreaker instead of replacing whatever's already set.
   function toggleSort(key: SortKey) {
-    if (sortKey === key) setSortDir((d) => (d === 1 ? -1 : 1));
-    else {
-      setSortKey(key);
-      setSortDir(1);
-    }
+    setSorts((prev) => {
+      const idx = prev.findIndex((s) => s.key === key);
+      if (idx === -1) return [...prev, { key, dir: 1 }];
+      if (prev[idx].dir === 1) {
+        const next = [...prev];
+        next[idx] = { key, dir: -1 };
+        return next;
+      }
+      return prev.filter((s) => s.key !== key);
+    });
   }
 
   function dueLabel(row: Row) {
@@ -1049,8 +1070,7 @@ export default function BrowseTab({
               <HeaderCell
                 key={key}
                 colKey={key}
-                sortKey={sortKey}
-                sortDir={sortDir}
+                sorts={sorts}
                 isDragging={!!(dragState?.active && dragState.key === key)}
                 headerRefs={headerRefs}
                 onPointerDown={(e) => startColumnDrag(key, e)}
