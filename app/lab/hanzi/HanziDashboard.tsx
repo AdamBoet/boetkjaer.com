@@ -10,6 +10,7 @@ import HanziTab from "./HanziTab";
 import BrowseTab from "./BrowseTab";
 import StatsTab from "./StatsTab";
 import { useReviewing } from "../../components/ReviewingContext";
+import { fetchMandarinData } from "./fetch-mandarin-data";
 
 const YEARLY_GOAL = 1500;
 const CARDS_PER_DAY = 5;
@@ -148,6 +149,28 @@ export default function HanziDashboard({
   // Hides the header + tab bar while an actual flashcard review session is
   // active (not the deck-menu screen), so the review gets the full page.
   const { reviewing, setReviewing } = useReviewing();
+  // Grading writes straight to Supabase but never touched this component's
+  // own `cards`/`hsk3Coverage`/`wordsPhrases` state — so the deck menu kept
+  // showing whatever counts were true when the page first loaded, no matter
+  // how many cards got graded in between. Re-fetching once a session
+  // actually ends (not on the initial mount, where `reviewing` is already
+  // false) keeps the numbers honest without needing a full page reload.
+  const wasReviewingRef = useRef(false);
+  async function refreshCardData() {
+    try {
+      const fresh = await fetchMandarinData();
+      setCards(fresh.cards);
+      setHsk3Coverage(fresh.hsk3Coverage);
+      setWordsPhrases(fresh.wordsPhrases);
+    } catch {
+      // Best-effort — the deck menu just keeps showing the previous counts.
+    }
+  }
+  function handleReviewingChange(active: boolean) {
+    if (wasReviewingRef.current && !active) refreshCardData();
+    wasReviewingRef.current = active;
+    setReviewing(active);
+  }
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
 
@@ -598,11 +621,11 @@ export default function HanziDashboard({
             // renders while tab === "flashcards"), so nothing else would
             // ever flip `reviewing` back off — leaving the shared tab bar
             // permanently hidden with no way to navigate anywhere else.
-            setReviewing(false);
+            handleReviewingChange(false);
             setFocusCard(c);
             setTab("browse");
           }}
-          onReviewingChange={setReviewing}
+          onReviewingChange={handleReviewingChange}
         />
       )}
 
