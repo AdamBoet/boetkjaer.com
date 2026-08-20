@@ -1021,16 +1021,30 @@ export function buildEditUpdates(
   return { word: front, pinyin: sub, meaning: back };
 }
 
+export type CardStatPatch = {
+  interval?: number;
+  factor?: number;
+  reps?: number;
+  lapses?: number;
+  mod?: number;
+  type?: number;
+  queue?: number;
+  learning_step?: number | null;
+  due?: number | null;
+};
+
 function ReviewSession({
   initialQueue,
   initialPending,
   onExit,
   onJumpToCard,
+  onCardUpdated,
 }: {
   initialQueue: DueCard[];
   initialPending: { card: DueCard; dueAt: number }[];
   onExit: () => void;
   onJumpToCard?: (card: { source: DeckKey; dbId: number | string }) => void;
+  onCardUpdated?: (source: DeckKey, dbId: number | string, patch: CardStatPatch) => void;
 }) {
   const [queue, setQueue] = useState(initialQueue);
   // Learning/relearning cards that aren't due yet — resurfaced into `queue`
@@ -1105,7 +1119,7 @@ function ReviewSession({
     const mod = Math.floor(Date.now() / 1000);
     const due = result.dueInMin != null ? mod + Math.round(result.dueInMin * 60) : null;
 
-    gradeCard(card.source, card.dbId, {
+    const patch = {
       interval: result.interval,
       factor: result.factor,
       reps,
@@ -1115,9 +1129,16 @@ function ReviewSession({
       queue: result.type,
       learning_step: result.learningStep,
       due,
-    }).catch((e) => {
+    };
+    gradeCard(card.source, card.dbId, patch).catch((e) => {
       setSaveError(e instanceof Error ? e.message : "Failed to save — check your connection.");
     });
+    // Keeps the deck menu's New/Learn/Due counts honest live, as each card
+    // is graded — they're computed from HanziDashboard's own card arrays,
+    // which nothing else updates as this session progresses (grading only
+    // wrote to Supabase; local state and the DB would otherwise drift apart
+    // until a full reload).
+    onCardUpdated?.(card.source, card.dbId, patch);
     const reviewId = logReview(card, g, result, shownAtRef.current);
 
     const rest = queue.slice(1);
@@ -1152,7 +1173,7 @@ function ReviewSession({
     const stack = lastActions.current;
     const action = stack[stack.length - 1];
     if (!action) return;
-    gradeCard(action.original.source, action.original.dbId, {
+    const patch = {
       interval: action.original.interval,
       factor: action.original.factor,
       reps: action.original.reps,
@@ -1161,9 +1182,11 @@ function ReviewSession({
       queue: action.original.type,
       learning_step: action.original.learningStep,
       due: action.original.due,
-    }).catch((e) => {
+    };
+    gradeCard(action.original.source, action.original.dbId, patch).catch((e) => {
       setSaveError(e instanceof Error ? e.message : "Failed to undo — check your connection.");
     });
+    onCardUpdated?.(action.original.source, action.original.dbId, patch);
     deleteReviewLog(action.original.source, action.original.dbId, action.reviewId);
     setQueue((q) => [action.original, ...q.filter((c) => c.id !== action.graded.id)]);
     setPending((p) => p.filter((x) => x.card.id !== action.graded.id));
@@ -1458,12 +1481,14 @@ export default function FlashcardTab({
   wordsPhrases,
   onJumpToCard,
   onReviewingChange,
+  onCardUpdated,
 }: {
   cards: HanziCard[];
   hsk3Coverage: Hsk3Coverage;
   wordsPhrases: WordPhrase[];
   onJumpToCard?: (card: { source: DeckKey; dbId: number | string }) => void;
   onReviewingChange?: (active: boolean) => void;
+  onCardUpdated?: (source: DeckKey, dbId: number | string, patch: CardStatPatch) => void;
 }) {
   const [selectedDeck, setSelectedDeck] = useState<DeckKey | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -1572,6 +1597,7 @@ export default function FlashcardTab({
         initialPending={initialPending}
         onExit={() => setSelectedDeck(null)}
         onJumpToCard={onJumpToCard}
+        onCardUpdated={onCardUpdated}
       />
     </TrackpadModeProvider>
   );

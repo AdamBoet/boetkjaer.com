@@ -5,12 +5,11 @@ import { useTheme } from "next-themes";
 import { type HanziCard } from "./CharacterGrid";
 import WritingPractice from "./WritingPractice";
 import Hsk3Grid, { type Hsk3Coverage } from "./Hsk3Grid";
-import FlashcardTab, { type WordPhrase, type DeckKey } from "./FlashcardTab";
+import FlashcardTab, { type WordPhrase, type DeckKey, type CardStatPatch } from "./FlashcardTab";
 import HanziTab from "./HanziTab";
 import BrowseTab from "./BrowseTab";
 import StatsTab from "./StatsTab";
 import { useReviewing } from "../../components/ReviewingContext";
-import { fetchMandarinData } from "./fetch-mandarin-data";
 
 const YEARLY_GOAL = 1500;
 const CARDS_PER_DAY = 5;
@@ -152,24 +151,39 @@ export default function HanziDashboard({
   // Grading writes straight to Supabase but never touched this component's
   // own `cards`/`hsk3Coverage`/`wordsPhrases` state — so the deck menu kept
   // showing whatever counts were true when the page first loaded, no matter
-  // how many cards got graded in between. Re-fetching once a session
-  // actually ends (not on the initial mount, where `reviewing` is already
-  // false) keeps the numbers honest without needing a full page reload.
-  const wasReviewingRef = useRef(false);
-  async function refreshCardData() {
-    try {
-      const fresh = await fetchMandarinData();
-      setCards(fresh.cards);
-      setHsk3Coverage(fresh.hsk3Coverage);
-      setWordsPhrases(fresh.wordsPhrases);
-    } catch {
-      // Best-effort — the deck menu just keeps showing the previous counts.
+  // how many cards got graded in between. Patch the same fields locally,
+  // live, every time a card's status actually changes (grade or undo), so
+  // the counts stay honest throughout the session instead of only catching
+  // up once it ends.
+  function handleCardUpdated(source: DeckKey, dbId: number | string, rawPatch: CardStatPatch) {
+    // A null `due` (graduated cards use a day-based interval instead) means
+    // "not applicable" here same as `undefined` does for these display
+    // types — they just never modeled the null case locally.
+    const patch = { ...rawPatch, due: rawPatch.due ?? undefined };
+    if (source === "hanzi") {
+      setCards((prev) => prev.map((c) => (c.note_id === dbId ? { ...c, ...patch } : c)));
+      return;
     }
-  }
-  function handleReviewingChange(active: boolean) {
-    if (wasReviewingRef.current && !active) refreshCardData();
-    wasReviewingRef.current = active;
-    setReviewing(active);
+    if (source === "random_words" || source === "idioms") {
+      setWordsPhrases((prev) =>
+        prev.map((w) => (w.source === source && w.note_id === dbId ? { ...w, ...patch } : w))
+      );
+      return;
+    }
+    // hsk3: dbId is the word itself, and words are nested per HSK level —
+    // same lookup approach as handleToggleHsk3Known below.
+    setHsk3Coverage((cov) => {
+      const levels = { ...cov.levels };
+      for (const [levelKey, words] of Object.entries(levels)) {
+        const idx = words.findIndex((w) => w.word === dbId);
+        if (idx === -1) continue;
+        const updatedWords = [...words];
+        updatedWords[idx] = { ...words[idx], ...patch };
+        levels[levelKey] = updatedWords;
+        break;
+      }
+      return { ...cov, levels };
+    });
   }
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
@@ -621,11 +635,12 @@ export default function HanziDashboard({
             // renders while tab === "flashcards"), so nothing else would
             // ever flip `reviewing` back off — leaving the shared tab bar
             // permanently hidden with no way to navigate anywhere else.
-            handleReviewingChange(false);
+            setReviewing(false);
             setFocusCard(c);
             setTab("browse");
           }}
-          onReviewingChange={handleReviewingChange}
+          onReviewingChange={setReviewing}
+          onCardUpdated={handleCardUpdated}
         />
       )}
 
