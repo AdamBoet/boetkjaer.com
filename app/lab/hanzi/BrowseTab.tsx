@@ -61,6 +61,25 @@ const COLUMN_ALIGN: Record<ColumnKey, "left" | "right"> = {
 const DEFAULT_COLUMN_ORDER: ColumnKey[] = ["front", "deck", "status", "interval", "reps", "due", "rank"];
 const DEFAULT_HIDDEN_COLUMNS: ColumnKey[] = [];
 const COLUMNS_STORAGE_KEY = "browse_columns_v1";
+const VIEW_STORAGE_KEY = "browse_view_v1";
+
+interface SavedView {
+  deckFilter: DeckKey | "all";
+  levelFilter: string | null;
+  statusFilter: Status | "all";
+  sortKey: SortKey;
+  sortDir: 1 | -1;
+}
+
+function loadView(): SavedView | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(VIEW_STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as SavedView) : null;
+  } catch {
+    return null;
+  }
+}
 
 interface ColumnConfig {
   key: ColumnKey;
@@ -454,6 +473,10 @@ export default function BrowseTab({
   // hydration mismatch.
   const [columns, setColumns] = useState<ColumnConfig[]>(defaultColumns);
   const [columnsHydrated, setColumnsHydrated] = useState(false);
+  // Sort column/direction and the Deck/Status/Level filters, persisted the
+  // same way — otherwise every reload silently reset back to "Due,
+  // ascending, all decks" no matter what view was last set up.
+  const [viewHydrated, setViewHydrated] = useState(false);
   // Pointer-based drag instead of native HTML5 drag-and-drop — the browser's
   // built-in drag ghost/dragover events are janky, only reliably start from
   // exactly where the listener is attached (not the whole cell), and give no
@@ -492,7 +515,22 @@ export default function BrowseTab({
     const isMobile = window.matchMedia("(max-width: 767px)").matches;
     setColumns(loadColumns(isMobile ? (["reps", "interval", "rank"] as ColumnKey[]) : []));
     setColumnsHydrated(true);
+
+    const saved = loadView();
+    if (saved) {
+      setDeckFilter(saved.deckFilter);
+      setLevelFilter(saved.levelFilter);
+      setStatusFilter(saved.statusFilter);
+      setSortKey(saved.sortKey);
+      setSortDir(saved.sortDir);
+    }
+    setViewHydrated(true);
   }, []);
+
+  useEffect(() => {
+    if (!viewHydrated) return;
+    localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify({ deckFilter, levelFilter, statusFilter, sortKey, sortDir }));
+  }, [viewHydrated, deckFilter, levelFilter, statusFilter, sortKey, sortDir]);
 
   useEffect(() => {
     if (!columnsHydrated) return;
@@ -657,9 +695,14 @@ export default function BrowseTab({
           // Cards without a rank (HSK vocab, words & phrases) sort after
           // ranked ones when ascending, before them when descending — like
           // any other column, instead of always pinning them to one end
-          // regardless of direction (which made toggling do nothing for
-          // most of the table, since ranked hanzi cards are the minority).
-          cmp = (a.rank ?? Infinity) - (b.rank ?? Infinity);
+          // regardless of direction. Using Infinity as the fallback here
+          // produced NaN (Infinity - Infinity) whenever both sides were
+          // unranked — which is most of the table, since ranked hanzi cards
+          // are the minority — and Array.sort silently no-ops on a NaN
+          // comparator result, so toggling direction visibly did nothing
+          // for the vast majority of rows. A large finite sentinel avoids
+          // that entirely: MAX_SAFE_INTEGER - MAX_SAFE_INTEGER is a normal 0.
+          cmp = (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER);
           break;
       }
       return cmp * sortDir;
