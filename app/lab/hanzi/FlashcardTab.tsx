@@ -1407,7 +1407,7 @@ function ReviewSession({
                 NEW
               </p>
             )}
-            <p className={`text-2xl text-center ${idiomRed ? "text-red-700 dark:text-red-500" : ""}`}>
+            <p className="text-2xl text-center">
               {current.source === "hanzi"
                 ? revealed
                   ? pinyinFrontHeadline(current.sub, current.back)
@@ -1429,9 +1429,7 @@ function ReviewSession({
 
             {!revealed && current.sentence && current.source !== "hanzi" && (
               <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800 text-center">
-                <p className={`text-sm whitespace-pre-line ${idiomRed ? "text-red-700 dark:text-red-500" : "text-zinc-700 dark:text-zinc-300"}`}>
-                  {current.sentence}
-                </p>
+                <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.sentence}</p>
               </div>
             )}
 
@@ -1472,23 +1470,19 @@ function ReviewSession({
                   <div className="space-y-1">
                     {current.sub && (
                       <p className="text-2xl flex items-center justify-center gap-2">
-                        <span className={idiomRed ? "text-red-700 dark:text-red-500" : "text-emerald-700 dark:text-emerald-500"}>
+                        <span className={idiomRed ? "text-[#8b0000] dark:text-[#e5484d]" : "text-emerald-700 dark:text-emerald-500"}>
                           {current.sub}
                         </span>
                         <AudioButton src={current.audioUrl} label="Play pronunciation" />
                       </p>
                     )}
                     {current.back && (
-                      <p className={`text-2xl whitespace-pre-line ${idiomRed ? "text-red-700 dark:text-red-500" : "text-zinc-700 dark:text-zinc-300"}`}>
-                        {current.back}
-                      </p>
+                      <p className="text-2xl text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.back}</p>
                     )}
                   </div>
                 )}
                 {current.examples && (
-                  <p className={`text-2xl whitespace-pre-line ${idiomRed ? "text-red-700 dark:text-red-500" : "text-zinc-700 dark:text-zinc-300"}`}>
-                    {current.examples}
-                  </p>
+                  <p className="text-2xl text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.examples}</p>
                 )}
                 {current.source === "hanzi" && current.audioUrl && (
                   <div className="flex justify-center">
@@ -1497,20 +1491,16 @@ function ReviewSession({
                 )}
                 {current.sentence && (
                   <div className="pt-4 mt-2 border-t border-zinc-200 dark:border-zinc-800 space-y-0.5">
-                    <p className={`text-sm flex items-center justify-center gap-2 ${idiomRed ? "text-red-700 dark:text-red-500" : "text-zinc-700 dark:text-zinc-300"}`}>
+                    <p className="text-sm text-zinc-700 dark:text-zinc-300 flex items-center justify-center gap-2">
                       <span>{current.sentence}</span>
                       <AudioButton src={current.sentenceAudioUrl} label="Play sentence audio" />
                     </p>
                     {current.sentencePinyin && (
-                      <p className={`text-sm ${idiomRed ? "text-red-700 dark:text-red-500" : "text-emerald-700 dark:text-emerald-500"}`}>
+                      <p className={`text-sm ${idiomRed ? "text-[#8b0000] dark:text-[#e5484d]" : "text-emerald-700 dark:text-emerald-500"}`}>
                         {current.sentencePinyin}
                       </p>
                     )}
-                    {current.sentenceMeaning && (
-                      <p className={`text-sm ${idiomRed ? "text-red-700 dark:text-red-500" : "text-zinc-600 dark:text-zinc-400"}`}>
-                        {current.sentenceMeaning}
-                      </p>
-                    )}
+                    {current.sentenceMeaning && <p className="text-sm text-zinc-600 dark:text-zinc-400">{current.sentenceMeaning}</p>}
                   </div>
                 )}
                 {current.pictureUrl && (
