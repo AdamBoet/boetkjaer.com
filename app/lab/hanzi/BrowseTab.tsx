@@ -24,11 +24,9 @@ import {
 
 type SortKey = "front" | "deck" | "status" | "interval" | "reps" | "due" | "rank";
 type ColumnKey = SortKey;
-// An ordered list rather than a single {key, dir} — clicking a column that
-// isn't already active appends it as a new tiebreaker instead of replacing
-// whatever's already sorted, so multiple columns can be sorted at once
-// (first entry = highest priority). Clicking an already-active column
-// cycles its own direction in place; clicking it a third time removes it.
+// A single active sort (array of 0 or 1, not multiple) — clicking a column
+// replaces whatever was sorted before. Clicking the same column again
+// cycles ascending -> descending -> unsorted (empty array).
 type SortSpec = { key: SortKey; dir: 1 | -1 };
 
 function compareByKey(a: Row, b: Row, key: SortKey): number {
@@ -244,8 +242,7 @@ function HeaderCell({
   onSortClick: () => void;
 }) {
   const align = COLUMN_ALIGN[colKey];
-  const sortIdx = sorts.findIndex((s) => s.key === colKey);
-  const active = sortIdx !== -1 ? sorts[sortIdx] : null;
+  const active = sorts.find((s) => s.key === colKey) ?? null;
   return (
     <div
       ref={(el) => {
@@ -268,14 +265,7 @@ function HeaderCell({
         }`}
       >
         {COLUMN_LABELS[colKey]}
-        {active && (
-          <span className="inline-flex items-center gap-0.5">
-            {active.dir === 1 ? "↑" : "↓"}
-            {/* Only shown once a second column is also active, so a single
-                sort doesn't get a redundant "1" badge. */}
-            {sorts.length > 1 && <span className="text-[9px] tabular-nums">{sortIdx + 1}</span>}
-          </span>
-        )}
+        {active && <span>{active.dir === 1 ? "↑" : "↓"}</span>}
       </button>
     </div>
   );
@@ -865,14 +855,10 @@ export default function BrowseTab({
   // lowest-priority tiebreaker instead of replacing whatever's already set.
   function toggleSort(key: SortKey) {
     setSorts((prev) => {
-      const idx = prev.findIndex((s) => s.key === key);
-      if (idx === -1) return [...prev, { key, dir: 1 }];
-      if (prev[idx].dir === 1) {
-        const next = [...prev];
-        next[idx] = { key, dir: -1 };
-        return next;
-      }
-      return prev.filter((s) => s.key !== key);
+      const current = prev[0];
+      if (!current || current.key !== key) return [{ key, dir: 1 }];
+      if (current.dir === 1) return [{ key, dir: -1 }];
+      return [];
     });
   }
 
