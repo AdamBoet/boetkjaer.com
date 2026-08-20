@@ -174,6 +174,61 @@ function FilterChip({
   );
 }
 
+// Hoisted to module scope deliberately — a component defined inside another
+// component's render body is a fresh function reference on every render, so
+// React treats it as a different component type and unmounts/remounts the
+// underlying DOM on every re-render, not just an update. onPointerDown
+// (which starts a *potential* drag on every press, not only real drags) was
+// setting state on the parent, which re-rendered it, which recreated this
+// component, which replaced the actual <button> mid-press — breaking the
+// browser's native click synthesis for every header, not just Position.
+// Hoisting it keeps the DOM node stable across re-renders so clicks work.
+function HeaderCell({
+  colKey,
+  sortKey,
+  sortDir,
+  isDragging,
+  headerRefs,
+  onPointerDown,
+  onSortClick,
+}: {
+  colKey: ColumnKey;
+  sortKey: SortKey;
+  sortDir: 1 | -1;
+  isDragging: boolean;
+  headerRefs: React.MutableRefObject<Partial<Record<ColumnKey, HTMLDivElement>>>;
+  onPointerDown: (e: React.PointerEvent) => void;
+  onSortClick: () => void;
+}) {
+  const align = COLUMN_ALIGN[colKey];
+  return (
+    <div
+      ref={(el) => {
+        if (el) headerRefs.current[colKey] = el;
+      }}
+      onPointerDown={onPointerDown}
+      // Columns reorder live under the cursor as you drag (see the
+      // `reorderColumn` call in the pointermove handler), so the dragged
+      // header's own slot already shows where it's headed — it just needs
+      // to read as "lifted" while the floating label above it tracks the
+      // cursor.
+      className={`relative px-3 py-2 cursor-grab active:cursor-grabbing select-none touch-none transition-colors ${
+        isDragging ? "opacity-30" : ""
+      }`}
+    >
+      <button
+        onClick={onSortClick}
+        className={`flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors ${
+          align === "right" ? "ml-auto" : ""
+        }`}
+      >
+        {COLUMN_LABELS[colKey]}
+        {sortKey === colKey && <span>{sortDir === 1 ? "↑" : "↓"}</span>}
+      </button>
+    </div>
+  );
+}
+
 function ColumnsMenu({
   columns,
   onToggle,
@@ -823,39 +878,6 @@ export default function BrowseTab({
     }
   }
 
-  // The whole cell (not just the label) starts a drag, and a plain click
-  // still sorts — see the `active` threshold above for how the two stay
-  // independent.
-  function HeaderCell({ colKey }: { colKey: ColumnKey }) {
-    const align = COLUMN_ALIGN[colKey];
-    const isDragging = dragState?.active && dragState.key === colKey;
-    return (
-      <div
-        ref={(el) => {
-          if (el) headerRefs.current[colKey] = el;
-        }}
-        onPointerDown={(e) => startColumnDrag(colKey, e)}
-        // Columns reorder live under the cursor as you drag (see the
-        // `reorderColumn` call in the pointermove handler), so the dragged
-        // header's own slot already shows where it's headed — it just needs
-        // to read as "lifted" while the floating label above it tracks the
-        // cursor.
-        className={`relative px-3 py-2 cursor-grab active:cursor-grabbing select-none touch-none transition-colors ${
-          isDragging ? "opacity-30" : ""
-        }`}
-      >
-        <button
-          onClick={() => toggleSort(colKey)}
-          className={`flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors ${
-            align === "right" ? "ml-auto" : ""
-          }`}
-        >
-          {COLUMN_LABELS[colKey]}
-          {sortKey === colKey && <span>{sortDir === 1 ? "↑" : "↓"}</span>}
-        </button>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-3">
@@ -1024,7 +1046,16 @@ export default function BrowseTab({
             style={{ gridTemplateColumns: gridTemplate }}
           >
             {visibleColumns.map((key) => (
-              <HeaderCell key={key} colKey={key} />
+              <HeaderCell
+                key={key}
+                colKey={key}
+                sortKey={sortKey}
+                sortDir={sortDir}
+                isDragging={!!(dragState?.active && dragState.key === key)}
+                headerRefs={headerRefs}
+                onPointerDown={(e) => startColumnDrag(key, e)}
+                onSortClick={() => toggleSort(key)}
+              />
             ))}
           </div>
 
