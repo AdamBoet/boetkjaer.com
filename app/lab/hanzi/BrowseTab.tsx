@@ -102,7 +102,24 @@ function loadView(): SavedView | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(VIEW_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as SavedView) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<SavedView> & { sortKey?: SortKey; sortDir?: 1 | -1 };
+    // The stored shape briefly changed from a single {sortKey, sortDir} to
+    // an ordered `sorts` array — a browser with the old shape still cached
+    // would otherwise get `sorts: undefined` here, and `sorts.length` a few
+    // lines later in the caller would throw on every render. Migrate the
+    // legacy shape forward instead of assuming the saved data matches.
+    const sorts = Array.isArray(parsed.sorts)
+      ? parsed.sorts
+      : parsed.sortKey
+      ? [{ key: parsed.sortKey, dir: parsed.sortDir ?? 1 }]
+      : [];
+    return {
+      deckFilter: parsed.deckFilter ?? "all",
+      levelFilter: parsed.levelFilter ?? null,
+      statusFilter: parsed.statusFilter ?? "all",
+      sorts,
+    };
   } catch {
     return null;
   }
