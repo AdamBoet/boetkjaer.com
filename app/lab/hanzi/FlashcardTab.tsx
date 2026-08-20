@@ -1427,8 +1427,8 @@ function ReviewSession({
             </p>
 
             {!revealed && current.sentence && current.source !== "hanzi" && (
-              <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800 text-center">
-                <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.sentence}</p>
+              <div className="mt-6 text-center">
+                <p className="text-2xl text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.sentence}</p>
               </div>
             )}
 
