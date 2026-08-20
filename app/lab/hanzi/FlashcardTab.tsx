@@ -1404,7 +1404,7 @@ function ReviewSession({
           <div className="max-w-xl m-auto">
             {current.category && (
               <p
-                className={`mb-2 text-xs font-semibold ${
+                className={`mb-6 text-xs font-semibold ${
                   current.category === "saying"
                     ? "text-emerald-700 dark:text-emerald-500"
                     : "text-red-700 dark:text-red-500"
@@ -1464,9 +1464,9 @@ function ReviewSession({
             )}
 
             {revealed && (
-              <div className="mt-8 space-y-1.5 text-center animate-card-reveal-in">
+              <div className="space-y-1.5 text-center animate-card-reveal-in">
                 {current.source !== "hanzi" && (current.sub || current.back) && (
-                  <div className="space-y-1">
+                  <div>
                     {current.sub && (
                       <p className="text-xl flex items-center justify-center gap-2">
                         <span className={idiomRed ? "text-[#8b0000] dark:text-[#e5484d]" : "text-emerald-700 dark:text-emerald-500"}>
