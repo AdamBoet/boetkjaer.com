@@ -6,6 +6,7 @@ import { tileStyle as masteryTileStyle, computeTooltipPos } from "./CharacterGri
 export interface Hsk3Word {
   word: string;
   known: boolean;
+  levelLabel?: string; // e.g. "HSK 3" — attached at read time, not stored in Supabase
   pinyin?: string;
   meaning?: string;
   sentence?: string;

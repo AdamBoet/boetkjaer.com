@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState, useEffect } from "react";
 import { type HanziCard } from "./CharacterGrid";
 import { cardDueDiff } from "./card-utils";
-import { type Hsk3Coverage, type Hsk3Word } from "./Hsk3Grid";
+import { type Hsk3Coverage, type Hsk3Word, LEVELS } from "./Hsk3Grid";
 import HanziWritingBox from "./HanziWritingBox";
 import HanziCharacterPreview from "./HanziCharacterPreview";
 import { TrackpadModeProvider, useTrackpadModeContext } from "./TrackpadModeContext";
@@ -95,6 +95,7 @@ export interface DueCard {
   pictureUrl?: string | null; // hanzi + wp only
   rank?: number; // hanzi only — frequency rank (lower = more common)
   category?: "saying" | "idiom" | null; // idioms only
+  levelLabel?: string; // hsk3 only — e.g. "HSK 3"
 }
 
 type Grade = "again" | "hard" | "good" | "easy";
@@ -348,7 +349,7 @@ export function toDueCard(key: DeckKey, card: AnyCard, dueDiff: number | null, i
     return {
       id: `hsk3-${w.word}`, dbId: w.word, source: "hsk3", front: w.word, sub: w.pinyin ?? "", back: w.meaning ?? "", dueDiff, isNew, ...stats,
       sentence: w.sentence, sentencePinyin: w.sentence_pinyin, sentenceMeaning: w.sentence_meaning,
-      audioUrl: w.audio_url, sentenceAudioUrl: w.sentence_audio_url,
+      audioUrl: w.audio_url, sentenceAudioUrl: w.sentence_audio_url, levelLabel: w.levelLabel,
     };
   }
   const p = card as WordPhrase;
@@ -710,7 +711,7 @@ function GridToggleButton() {
   );
 }
 
-function HotkeysPanel() {
+function HotkeysPanel({ source }: { source: DeckKey }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -747,8 +748,8 @@ function HotkeysPanel() {
           <HotkeyRow keys={["4"]} description="Easy" />
           <HotkeyRow keys={["U"]} description="Undo" />
           <HotkeyRow keys={["E"]} description="Edit card" />
-          <HotkeyRow keys={["R"]} description="Redraw character" />
-          <HotkeyRow keys={["T"]} description="Toggle trackpad mode" />
+          {source === "hanzi" && <HotkeyRow keys={["R"]} description="Redraw character" />}
+          {source === "hanzi" && <HotkeyRow keys={["T"]} description="Toggle trackpad mode" />}
           <HotkeyRow keys={["B"]} description="Open in Browse" />
         </div>
       )}
@@ -1192,11 +1193,15 @@ function ReviewSession({
   }, [current?.id]);
 
   // Idiom/saying cards, back side only: pinyin is hidden under a click
-  // toggle (word text or the arrow beside it) instead of shown outright.
+  // toggle (word/sentence text or the arrow beside it) instead of shown
+  // outright.
   const [pinyinPeeked, setPinyinPeeked] = useState(false);
+  const [sentencePinyinPeeked, setSentencePinyinPeeked] = useState(false);
   useEffect(() => {
     setPinyinPeeked(false);
+    setSentencePinyinPeeked(false);
   }, [current?.id]);
+
 
 
   useEffect(() => {
@@ -1383,7 +1388,7 @@ function ReviewSession({
           onClick={onExit}
           className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
         >
-          ← Decks
+          ← {DECK_LABELS[current.source]}
         </button>
         <div className="flex items-center gap-4">
           <button
@@ -1397,29 +1402,34 @@ function ReviewSession({
             </svg>
           </button>
           <AudioControl />
-          <div className="hidden md:flex items-center gap-4">
-            <TrackpadToggleButton />
-            <GridToggleButton />
-          </div>
+          {current.source === "hanzi" && (
+            <div className="hidden md:flex items-center gap-4">
+              <TrackpadToggleButton />
+              <GridToggleButton />
+            </div>
+          )}
           <div className="hidden md:block">
-            <HotkeysPanel />
+            <HotkeysPanel source={current.source} />
           </div>
         </div>
       </div>
 
       <div className="w-full flex-1 min-h-0 flex flex-col">
         <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center text-center px-4 py-4">
-          <div className="max-w-xl m-auto">
+          <div className="w-full max-w-3xl m-auto">
             {current.category && (
-              <p
-                className={`mb-6 text-xs font-semibold ${
+              <span
+                className={`block w-fit mx-auto mb-8 px-4 py-1.5 rounded-full border border-zinc-200 dark:border-zinc-700 text-base font-semibold ${
                   current.category === "saying"
                     ? "text-emerald-700 dark:text-emerald-500"
                     : "text-red-700 dark:text-red-500"
                 }`}
               >
                 {current.category === "saying" ? "谚语" : "成语"}
-              </p>
+              </span>
+            )}
+            {current.levelLabel && (
+              <p className="-mt-16 mb-10 text-xs text-zinc-400 dark:text-zinc-600">{current.levelLabel}</p>
             )}
             {!revealed && current.isNew && (
               <p className="mb-2 text-xs font-semibold tracking-widest text-emerald-500 dark:text-emerald-400 [text-shadow:0_0_10px_rgba(16,185,129,0.85)]">
@@ -1428,20 +1438,30 @@ function ReviewSession({
             )}
             {revealed && current.source === "idioms" && current.sub ? (
               <div
-                className="group flex items-center justify-center gap-1.5 cursor-pointer"
+                className="group inline-grid grid-cols-[3.25rem_auto_3.25rem] items-center gap-1.5 cursor-pointer"
                 onClick={() => setPinyinPeeked((p) => !p)}
               >
+                <span />
                 <p className="text-2xl">{current.front}</p>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  className={`w-4 h-4 shrink-0 text-zinc-400 dark:text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity ${
-                    pinyinPeeked ? "rotate-180" : ""
-                  }`}
-                >
-                  <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 011.06 0L10 11.94l3.72-3.72a.75.75 0 111.06 1.06l-4.25 4.25a.75.75 0 01-1.06 0L5.22 9.28a.75.75 0 010-1.06z" clipRule="evenodd" />
-                </svg>
+                <div className="flex items-center gap-1.5">
+                  <AudioButton src={current.audioUrl} label="Play pronunciation" />
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    className={`w-4 h-4 shrink-0 text-zinc-400 dark:text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity ${
+                      pinyinPeeked ? "rotate-180" : ""
+                    }`}
+                  >
+                    <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 011.06 0L10 11.94l3.72-3.72a.75.75 0 111.06 1.06l-4.25 4.25a.75.75 0 01-1.06 0L5.22 9.28a.75.75 0 010-1.06z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+            ) : revealed && current.source !== "hanzi" ? (
+              <div className="inline-grid grid-cols-[1.5rem_auto_1.5rem] items-center gap-2">
+                <span />
+                <p className="text-2xl">{current.front}</p>
+                <AudioButton src={current.audioUrl} label="Play pronunciation" />
               </div>
             ) : (
               <p className="text-2xl text-center">
@@ -1454,8 +1474,8 @@ function ReviewSession({
             )}
 
             {!revealed && current.sentence && current.source !== "hanzi" && (
-              <div className="mt-6 text-center">
-                <p className="text-2xl text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.sentence}</p>
+              <div className="pt-6 mt-4 border-t border-zinc-200 dark:border-zinc-800 text-center">
+                <p className="text-2xl whitespace-pre-line">{current.sentence}</p>
               </div>
             )}
 
@@ -1491,24 +1511,24 @@ function ReviewSession({
             )}
 
             {revealed && (
-              <div className="space-y-1.5 text-center animate-card-reveal-in">
+              <div className="space-y-1.5 text-center">
                 {current.source !== "hanzi" && (current.sub || current.back) && (
                   <div>
-                    {current.sub && (current.source !== "idioms" || pinyinPeeked) && (
-                      <p className="text-xl flex items-center justify-center gap-2">
-                        <span className={idiomRed ? "text-[#8b0000] dark:text-[#e5484d]" : "text-emerald-700 dark:text-emerald-500"}>
-                          {current.sub}
-                        </span>
-                        <AudioButton src={current.audioUrl} label="Play pronunciation" />
+                    {current.source !== "idioms" && current.sub && (
+                      <p className="text-xl text-emerald-700 dark:text-emerald-500">{current.sub}</p>
+                    )}
+                    {current.source === "idioms" && pinyinPeeked && current.sub && (
+                      <p className={`text-xl animate-dropdown-in ${idiomRed ? "text-[#8b0000] dark:text-[#e5484d]" : "text-emerald-700 dark:text-emerald-500"}`}>
+                        {current.sub}
                       </p>
                     )}
                     {current.back && (
-                      <p className="text-2xl text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.back}</p>
+                      <p className="text-2xl whitespace-pre-line">{current.back}</p>
                     )}
                   </div>
                 )}
                 {current.examples && (
-                  <p className="text-2xl text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.examples}</p>
+                  <p className="text-2xl whitespace-pre-line">{current.examples}</p>
                 )}
                 {current.source === "hanzi" && current.audioUrl && (
                   <div className="flex justify-center">
@@ -1517,16 +1537,40 @@ function ReviewSession({
                 )}
                 {current.sentence && (
                   <div className="pt-6 mt-4 border-t border-zinc-200 dark:border-zinc-800 space-y-1">
-                    <p className="text-2xl text-zinc-700 dark:text-zinc-300 flex items-center justify-center gap-2">
-                      <span>{current.sentence}</span>
-                      <AudioButton src={current.sentenceAudioUrl} label="Play sentence audio" />
-                    </p>
-                    {current.sentencePinyin && (
-                      <p className={`text-xl ${idiomRed ? "text-[#8b0000] dark:text-[#e5484d]" : "text-emerald-700 dark:text-emerald-500"}`}>
+                    {current.source !== "hanzi" && current.sentencePinyin ? (
+                      <div
+                        className="group inline-grid grid-cols-[3.25rem_auto_3.25rem] items-center gap-1.5 cursor-pointer"
+                        onClick={() => setSentencePinyinPeeked((p) => !p)}
+                      >
+                        <span />
+                        <p className="text-2xl">{current.sentence}</p>
+                        <div className="flex items-center gap-1.5">
+                          <AudioButton src={current.sentenceAudioUrl} label="Play sentence audio" />
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                            className={`w-4 h-4 shrink-0 text-zinc-400 dark:text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity ${
+                              sentencePinyinPeeked ? "rotate-180" : ""
+                            }`}
+                          >
+                            <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 011.06 0L10 11.94l3.72-3.72a.75.75 0 111.06 1.06l-4.25 4.25a.75.75 0 01-1.06 0L5.22 9.28a.75.75 0 010-1.06z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="inline-grid grid-cols-[1.5rem_auto_1.5rem] items-center gap-2">
+                        <span />
+                        <p className="text-2xl">{current.sentence}</p>
+                        <AudioButton src={current.sentenceAudioUrl} label="Play sentence audio" />
+                      </div>
+                    )}
+                    {sentencePinyinPeeked && current.sentencePinyin && (
+                      <p className={`text-xl animate-dropdown-in ${idiomRed ? "text-[#8b0000] dark:text-[#e5484d]" : "text-emerald-700 dark:text-emerald-500"}`}>
                         {current.sentencePinyin}
                       </p>
                     )}
-                    {current.sentenceMeaning && <p className="text-2xl text-zinc-600 dark:text-zinc-400">{current.sentenceMeaning}</p>}
+                    {current.sentenceMeaning && <p className="text-2xl">{current.sentenceMeaning}</p>}
                   </div>
                 )}
                 {current.pictureUrl && (
@@ -1722,7 +1766,10 @@ export default function FlashcardTab({
   }, [selectedDeck]);
 
   const hsk3Known = useMemo(
-    () => Object.values(hsk3Coverage.levels).flat().filter((w) => w.known),
+    () =>
+      LEVELS.flatMap(({ key, label }) =>
+        (hsk3Coverage.levels[key] ?? []).filter((w) => w.known).map((w) => ({ ...w, levelLabel: label }))
+      ),
     [hsk3Coverage]
   );
   const randomWords = useMemo(() => wordsPhrases.filter((w) => w.source === "random_words"), [wordsPhrases]);
