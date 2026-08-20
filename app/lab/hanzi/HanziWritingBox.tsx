@@ -17,8 +17,8 @@ const CANVAS_SIZE = 280;
 export const GRID_BACKGROUND_STYLE: React.CSSProperties = {
   backgroundColor: "#ffffff",
   backgroundImage:
-    "repeating-linear-gradient(to bottom, #a1a1aa 0, #a1a1aa 9px, transparent 9px, transparent 18px), " +
-    "repeating-linear-gradient(to right, #a1a1aa 0, #a1a1aa 9px, transparent 9px, transparent 18px)",
+    "repeating-linear-gradient(to bottom, #e4e4e7 0, #e4e4e7 9px, transparent 9px, transparent 18px), " +
+    "repeating-linear-gradient(to right, #e4e4e7 0, #e4e4e7 9px, transparent 9px, transparent 18px)",
   backgroundSize: "2px 100%, 100% 2px",
   backgroundPosition: "50% 0, 0 50%",
   backgroundRepeat: "no-repeat, no-repeat",
