@@ -66,8 +66,9 @@
      *gap* rather than a dash — otherwise all four rays' first dash lands
      right at the shared center point and overlaps into one oversized
      plus-shape, clearly longer than the regular dashes further out. A
-     small dedicated <circle> marks the actual center instead. */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280'%3E%3Cg stroke='%23d4d4d8' stroke-width='1' stroke-dasharray='14 21' stroke-dashoffset='-20'%3E%3Cline x1='140' y1='140' x2='140' y2='0'/%3E%3Cline x1='140' y1='140' x2='140' y2='280'/%3E%3Cline x1='140' y1='140' x2='0' y2='140'/%3E%3Cline x1='140' y1='140' x2='280' y2='140'/%3E%3C/g%3E%3Ccircle cx='140' cy='140' r='1.5' fill='%23d4d4d8'/%3E%3C/svg%3E");
+     small dedicated + (same stroke-width as the dashes) marks the actual
+     center instead of a plain dot. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280'%3E%3Cg stroke='%23d4d4d8' stroke-width='1' stroke-dasharray='18 8' stroke-dashoffset='-22'%3E%3Cline x1='140' y1='140' x2='140' y2='0'/%3E%3Cline x1='140' y1='140' x2='140' y2='280'/%3E%3Cline x1='140' y1='140' x2='0' y2='140'/%3E%3Cline x1='140' y1='140' x2='280' y2='140'/%3E%3C/g%3E%3Cg stroke='%23d4d4d8' stroke-width='1'%3E%3Cline x1='136' y1='140' x2='144' y2='140'/%3E%3Cline x1='140' y1='136' x2='140' y2='144'/%3E%3C/g%3E%3C/svg%3E");
   background-size: 280px 280px;
   background-position: center;
   background-repeat: no-repeat;
