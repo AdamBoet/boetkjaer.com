@@ -56,7 +56,13 @@
   background-image:
     repeating-linear-gradient(to bottom, #d4d4d8 0, #d4d4d8 14px, transparent 14px, transparent 35px),
     repeating-linear-gradient(to right, #d4d4d8 0, #d4d4d8 14px, transparent 14px, transparent 35px);
-  background-size: 1px 100%, 100% 1px;
+  /* Fixed 280px, not 100% — the boxes are 280px, but a percentage here is
+     computed against the padding-box (border excluded), which with a 1px
+     border and border-box sizing is 278px, not 280. That 2px shrink broke
+     the "divides evenly by 35" math above, throwing the two lines'
+     phases out of sync with each other and the pattern visibly asymmetric.
+     A fixed size keeps the repeat cycle itself always exactly 35px. */
+  background-size: 1px 280px, 280px 1px;
   background-position: 50% 0, 0 50%;
   background-repeat: no-repeat, no-repeat;
   opacity: 0;
