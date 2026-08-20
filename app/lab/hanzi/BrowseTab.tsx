@@ -858,10 +858,20 @@ export default function BrowseTab({
     if (!pendingFocusId.current) return;
     const idx = sorted.findIndex((r) => r.id === pendingFocusId.current);
     if (idx === -1) return;
-    setSelectedId(sorted[idx].id);
-    rowVirtualizer.scrollToIndex(idx, { align: "center" });
+    const targetId = sorted[idx].id;
+    setSelectedId(targetId);
     pendingFocusId.current = null;
     onFocusHandled?.();
+    // Scrolling has to wait a frame: right now the virtualizer still thinks
+    // this row is a plain 41px row (its estimate only switches to the ~480px
+    // editor height once selectedId's own re-render + the layout-effect
+    // remeasure above have run) — scrolling immediately centered the
+    // viewport on a 41px sliver instead of the actual editor, which is what
+    // made the jump look like nothing got selected.
+    requestAnimationFrame(() => {
+      const i = sorted.findIndex((r) => r.id === targetId);
+      if (i !== -1) rowVirtualizer.scrollToIndex(i, { align: "center" });
+    });
   }, [sorted, rowVirtualizer, onFocusHandled]);
 
   // Cycles a column through ascending -> descending -> unsorted, same as a
