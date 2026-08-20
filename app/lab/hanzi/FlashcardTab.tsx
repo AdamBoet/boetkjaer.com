@@ -437,7 +437,7 @@ function buildQueue(
 // Counts shown in the deck menu — computed from our own data, not Anki.
 // New/Due are capped by the same session settings the review queue itself
 // uses, so the numbers shown are exactly what pressing into the deck yields.
-function countDeck(key: DeckKey, items: AnyCard[], mounted: boolean): DeckCounts {
+function countDeck(key: DeckKey, items: AnyCard[], mounted: boolean, newIntroducedToday: number): DeckCounts {
   let newCount = 0, learnCount = 0, dueCount = 0;
   for (const item of items) {
     const diff = dueDiffFrom(item);
@@ -449,10 +449,16 @@ function countDeck(key: DeckKey, items: AnyCard[], mounted: boolean): DeckCounts
   // SSR/the initial client render — using it unconditionally here would make
   // that first render disagree with the server and trigger a hydration
   // mismatch. Fall back to the same defaults the server sees until mounted.
+  // "New cards per session" is meant as a per-day allowance, not something
+  // that resets every time the deck is re-entered — subtract however many
+  // distinct new cards have already been introduced today (see the
+  // newIntroducedToday computation below) so the number actually counts
+  // down over the course of a day instead of always showing the raw cap.
+  const cap = Math.max(0, (mounted ? loadNewCards(key) : DEFAULT_NEW_CARDS) - newIntroducedToday);
   return {
     key,
     label: DECK_LABELS[key],
-    newCount: Math.min(newCount, mounted ? loadNewCards(key) : DEFAULT_NEW_CARDS),
+    newCount: Math.min(newCount, cap),
     learnCount,
     dueCount: Math.min(dueCount, mounted ? loadMaxReviews(key) : DEFAULT_MAX_REVIEWS),
   };
@@ -504,7 +510,7 @@ function DeckSettingsPopover({
       >
         <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Session limits</p>
         <label className="block space-y-1">
-          <span className="text-xs text-zinc-500">New cards per session</span>
+          <span className="text-xs text-zinc-500">New cards per day</span>
           <input
             type="number"
             min={0}
@@ -1518,6 +1524,16 @@ export default function FlashcardTab({
   // Anki-synced reviews both write to) rather than AnkiConnect — this is
   // meant to work whether or not Anki is even open.
   const [todayStats, setTodayStats] = useState<{ count: number; minutes: number; secPerCard: number } | null>(null);
+  // How many distinct new cards have already been introduced today, per
+  // deck — subtracted from "New cards per session" in countDeck/the queue
+  // build so that cap acts as a per-day allowance instead of resetting
+  // every time the deck is re-entered. review_type 0 covers a card's
+  // original learn-phase (its true first review, plus any same-day "Again"
+  // re-shows before it graduates) and never applies to a card relearning
+  // after a lapse on some later day (that's review_type 2) — so deduping
+  // today's review_type-0 rows by (source, db_id) gives an accurate count
+  // without needing a dedicated "was this a new card" column.
+  const [newToday, setNewToday] = useState<Record<DeckKey, number>>({ hanzi: 0, hsk3: 0, random_words: 0, idioms: 0 });
   useEffect(() => {
     // Re-fetches every time the deck menu becomes visible again (including
     // right after finishing a review session, since selectedDeck going back
@@ -1534,14 +1550,25 @@ export default function FlashcardTab({
       .then((d) => {
         if (d.error || !Array.isArray(d.rows)) return;
         const todayKey = new Date().toDateString();
-        const todays = (d.rows as { reviewed_at: string; time_taken_ms: number }[]).filter(
-          (r) => new Date(r.reviewed_at).toDateString() === todayKey
-        );
+        const todays = (
+          d.rows as { reviewed_at: string; time_taken_ms: number; source: DeckKey; db_id: string; review_type: number }[]
+        ).filter((r) => new Date(r.reviewed_at).toDateString() === todayKey);
         const timeMs = todays.reduce((s, r) => s + r.time_taken_ms, 0);
         setTodayStats({
           count: todays.length,
           minutes: timeMs / 60000,
           secPerCard: todays.length > 0 ? timeMs / todays.length / 1000 : 0,
+        });
+
+        const seenByDeck: Record<DeckKey, Set<string>> = { hanzi: new Set(), hsk3: new Set(), random_words: new Set(), idioms: new Set() };
+        for (const r of todays) {
+          if (r.review_type === 0 && seenByDeck[r.source]) seenByDeck[r.source].add(r.db_id);
+        }
+        setNewToday({
+          hanzi: seenByDeck.hanzi.size,
+          hsk3: seenByDeck.hsk3.size,
+          random_words: seenByDeck.random_words.size,
+          idioms: seenByDeck.idioms.size,
         });
       })
       .catch(() => {});
@@ -1556,12 +1583,12 @@ export default function FlashcardTab({
 
   const decks = useMemo(
     () => [
-      countDeck("hanzi", cards, mounted),
-      countDeck("hsk3", hsk3Known, mounted),
-      countDeck("random_words", randomWords, mounted),
-      countDeck("idioms", idioms, mounted),
+      countDeck("hanzi", cards, mounted, newToday.hanzi),
+      countDeck("hsk3", hsk3Known, mounted, newToday.hsk3),
+      countDeck("random_words", randomWords, mounted, newToday.random_words),
+      countDeck("idioms", idioms, mounted, newToday.idioms),
     ],
-    [cards, hsk3Known, randomWords, idioms, mounted]
+    [cards, hsk3Known, randomWords, idioms, mounted, newToday]
   );
 
   const { queue, pending: initialPending } = useMemo(() => {
@@ -1574,8 +1601,9 @@ export default function FlashcardTab({
         : selectedDeck === "random_words"
         ? randomWords.map((card) => ({ key: "random_words" as const, card }))
         : idioms.map((card) => ({ key: "idioms" as const, card }));
-    return buildQueue(items, loadMaxReviews(selectedDeck), loadNewCards(selectedDeck));
-  }, [selectedDeck, cards, hsk3Known, randomWords, idioms]);
+    const newCardsLimit = Math.max(0, loadNewCards(selectedDeck) - newToday[selectedDeck]);
+    return buildQueue(items, loadMaxReviews(selectedDeck), newCardsLimit);
+  }, [selectedDeck, cards, hsk3Known, randomWords, idioms, newToday]);
 
   if (!selectedDeck) {
     return (

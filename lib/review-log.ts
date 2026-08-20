@@ -2,6 +2,7 @@ import { supabaseAdmin } from "./supabase-server";
 
 export interface ReviewLogRow {
   source: string;
+  db_id: string;
   ease: number;
   last_interval: number;
   time_taken_ms: number;
@@ -9,7 +10,7 @@ export interface ReviewLogRow {
   reviewed_at: string;
 }
 
-const SELECT_COLUMNS = "source, ease, last_interval, time_taken_ms, review_type, reviewed_at";
+const SELECT_COLUMNS = "source, db_id, ease, last_interval, time_taken_ms, review_type, reviewed_at";
 const PAGE_SIZE = 1000;
 
 // PostgREST caps a single request at 1000 rows. Getting the total count up
