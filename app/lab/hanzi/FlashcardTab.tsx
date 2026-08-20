@@ -1191,12 +1191,6 @@ function ReviewSession({
     setRedoDrawing(false);
   }, [current?.id]);
 
-  // Idiom/saying cards only: a peek at the pinyin before flipping the whole
-  // card, without giving away the meaning too.
-  const [pinyinPeeked, setPinyinPeeked] = useState(false);
-  useEffect(() => {
-    setPinyinPeeked(false);
-  }, [current?.id]);
 
   useEffect(() => {
     if (!revealed) return;
@@ -1433,26 +1427,6 @@ function ReviewSession({
                 : current.front}
             </p>
 
-            {!revealed && current.source === "idioms" && current.sub && (
-              <div className="mt-1">
-                {pinyinPeeked ? (
-                  <p className={`text-xl ${idiomRed ? "text-[#8b0000] dark:text-[#e5484d]" : "text-emerald-700 dark:text-emerald-500"}`}>
-                    {current.sub}
-                  </p>
-                ) : (
-                  <button
-                    onClick={() => setPinyinPeeked(true)}
-                    aria-label="Reveal pinyin"
-                    className="text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 mx-auto">
-                      <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 011.06 0L10 11.94l3.72-3.72a.75.75 0 111.06 1.06l-4.25 4.25a.75.75 0 01-1.06 0L5.22 9.28a.75.75 0 010-1.06z" clipRule="evenodd" />
-                    </svg>
-                  </button>
-                )}
-              </div>
-            )}
-
             {!revealed && current.sentence && current.source !== "hanzi" && (
               <div className="mt-6 text-center">
                 <p className="text-2xl text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.sentence}</p>
@@ -1493,9 +1467,13 @@ function ReviewSession({
             {revealed && (
               <div className="space-y-1.5 text-center animate-card-reveal-in">
                 {current.source !== "hanzi" && (current.sub || current.back) && (
-                  <div>
+                  <div className="group">
                     {current.sub && (
-                      <p className="text-xl flex items-center justify-center gap-2">
+                      <p
+                        className={`text-xl flex items-center justify-center gap-2 transition-opacity ${
+                          current.source === "idioms" ? "opacity-0 group-hover:opacity-100" : ""
+                        }`}
+                      >
                         <span className={idiomRed ? "text-[#8b0000] dark:text-[#e5484d]" : "text-emerald-700 dark:text-emerald-500"}>
                           {current.sub}
                         </span>
