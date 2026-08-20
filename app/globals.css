@@ -34,3 +34,34 @@
 .animate-dropdown-in {
   animation: dropdown-in 160ms ease-out;
 }
+
+/* Writing-box tian zi ge guide cross. A ::before pseudo-element rather than
+   an inline `background-image` style so its opacity can actually transition
+   — background-image itself can't animate smoothly between a gradient and
+   none. Generated content still paints behind the element's real children
+   (here, the writer's own SVG), same guarantee a background-image had,
+   so the ink still isn't affected. */
+.hanzi-grid-layer {
+  position: relative;
+}
+.hanzi-grid-layer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* 35px cycle (14px dash, 21px gap) — divides evenly into both the box's
+     full 280px side (8 dashes) and its 140px half, so the pattern's phase
+     always lands on a dash boundary exactly at center: the cross meets
+     cleanly in the middle instead of a stray gap or dash overlap there. */
+  background-image:
+    repeating-linear-gradient(to bottom, #d4d4d8 0, #d4d4d8 14px, transparent 14px, transparent 35px),
+    repeating-linear-gradient(to right, #d4d4d8 0, #d4d4d8 14px, transparent 14px, transparent 35px);
+  background-size: 1px 100%, 100% 1px;
+  background-position: 50% 0, 0 50%;
+  background-repeat: no-repeat, no-repeat;
+  opacity: 0;
+  transition: opacity 250ms ease;
+}
+.hanzi-grid-layer.hanzi-grid-visible::before {
+  opacity: 1;
+}

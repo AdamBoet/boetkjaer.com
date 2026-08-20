@@ -8,25 +8,16 @@ import { useGridPref } from "./GridPrefContext";
 const TRACKPAD_MODE_KEY = "hanziTrackpadMode";
 const CANVAS_SIZE = 280;
 
-// Tian zi ge guide cross, painted as the box's own CSS background rather
-// than separate sibling elements. A `background-image` is guaranteed by the
-// CSS painting order to render behind *all* child content, including
-// whatever HanziWriter's own SVG draws inside the target div — sibling divs
-// depended on DOM order to stay behind the ink instead, which is exactly
-// what let the dashed pattern bleed into the drawn stroke. These boxes are
-// always `bg-white` regardless of site theme, so one static color is enough.
-export const GRID_BACKGROUND_STYLE: React.CSSProperties = {
-  backgroundColor: "#ffffff",
-  backgroundImage:
-    "repeating-linear-gradient(to bottom, #d4d4d8 0, #d4d4d8 3px, transparent 3px, transparent 6px), " +
-    "repeating-linear-gradient(to right, #d4d4d8 0, #d4d4d8 3px, transparent 3px, transparent 6px)",
-  backgroundSize: "1px 100%, 100% 1px",
-  backgroundPosition: "50% 0, 0 50%",
-  backgroundRepeat: "no-repeat, no-repeat",
-};
-const PLAIN_BACKGROUND_STYLE: React.CSSProperties = { backgroundColor: "#ffffff" };
-export function gridBoxStyle(showGrid: boolean): React.CSSProperties {
-  return showGrid ? GRID_BACKGROUND_STYLE : PLAIN_BACKGROUND_STYLE;
+// Tian zi ge guide cross — a plain white background (these boxes are always
+// white regardless of site theme) plus the `.hanzi-grid-layer` class from
+// globals.css, which renders the dashed cross as a ::before pseudo-element
+// so its opacity can fade in/out on toggle (a plain `background-image`
+// can't animate between a gradient and none). Generated content still
+// paints behind the element's real children — same guarantee a
+// background-image had — so it stays behind whatever HanziWriter draws.
+export const PLAIN_BACKGROUND_STYLE: React.CSSProperties = { backgroundColor: "#ffffff" };
+export function gridBoxClassName(showGrid: boolean): string {
+  return `hanzi-grid-layer${showGrid ? " hanzi-grid-visible" : ""}`;
 }
 // hanzi-writer's own built-in defaults (confirmed from its source) — used as
 // our baseline rather than guessed numbers.
@@ -707,7 +698,7 @@ export default function HanziWritingBox({
             <div className="space-y-1.5">
               <div
                 ref={wrapperRef}
-                className={`relative overflow-hidden touch-none rounded-xl border transition-shadow duration-300 ${
+                className={`relative overflow-hidden touch-none rounded-xl border transition-shadow duration-300 ${gridBoxClassName(showGrid)} ${
                   doneFlash
                     ? "border-emerald-400 ring-4 ring-emerald-500/60 shadow-[0_0_25px_6px_rgba(16,185,129,0.55)]"
                     : mistakeFlash
@@ -716,7 +707,7 @@ export default function HanziWritingBox({
                     ? "cursor-none border-blue-400 ring-4 ring-blue-500/60 shadow-[0_0_25px_6px_rgba(59,130,246,0.55)]"
                     : "border-zinc-200 dark:border-zinc-800"
                 }`}
-                style={{ width: 280, height: 280, ...gridBoxStyle(showGrid) }}
+                style={{ width: 280, height: 280, ...PLAIN_BACKGROUND_STYLE }}
               >
                 <div ref={targetRef} className="absolute inset-0" style={{ width: 280, height: 280 }} />
               </div>
@@ -725,8 +716,8 @@ export default function HanziWritingBox({
             {showReference && (
               <div className="hidden md:block space-y-1.5">
                 <div
-                  className="relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800"
-                  style={{ width: 280, height: 280, ...gridBoxStyle(showGrid) }}
+                  className={`relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 ${gridBoxClassName(showGrid)}`}
+                  style={{ width: 280, height: 280, ...PLAIN_BACKGROUND_STYLE }}
                 >
                   <div ref={referenceTargetRef} className="absolute inset-0" style={{ width: 280, height: 280 }} />
                 </div>
