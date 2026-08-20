@@ -530,7 +530,17 @@ export default function HanziWritingBox({
 
     resetReferenceStrokes(referenceWriterRef.current);
 
-    const isTrackpad = trackpadModeRef.current;
+    // Not trackpadModeRef here — on a fresh mount, this runs in the same
+    // initial effect flush as the mount effect that restores trackpad mode
+    // from localStorage (via setTrackpadMode), and that state update isn't
+    // reflected into the ref (which only syncs during render) until the
+    // *next* render, which happens after this flush completes. Since
+    // startQuiz only ever runs once per character, reading the ref here
+    // meant the leniency boost silently never applied on any card's first
+    // (only) quiz setup while trackpad mode was on — exactly when it's
+    // needed most, since trackpad-driven strokes are jerkier. Reading
+    // localStorage directly matches the same source of truth synchronously.
+    const isTrackpad = localStorage.getItem(TRACKPAD_MODE_KEY) === "1";
     writer
       .quiz({
         leniency: BASE_LENIENCY + (isTrackpad ? TRACKPAD_LENIENCY_BOOST : 0),
