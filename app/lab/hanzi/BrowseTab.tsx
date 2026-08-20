@@ -44,11 +44,12 @@ function compareByKey(a: Row, b: Row, key: SortKey): number {
     case "reps":
       return a.reps - b.reps;
     case "due":
-      return (a.dueDiff ?? Infinity) - (b.dueDiff ?? Infinity);
-    case "rank":
-      // The caller special-cases either side being unranked (see the sort
-      // loop below) — by the time this runs for "rank", both are guaranteed
+      // The caller special-cases either side lacking a real due diff (see
+      // the sort loop below) — by the time this runs, both are guaranteed
       // to have a real value.
+      return a.dueDiff! - b.dueDiff!;
+    case "rank":
+      // Same deal — the caller special-cases either side being unranked.
       return a.rank! - b.rank!;
   }
 }
@@ -784,6 +785,10 @@ export default function BrowseTab({
           // parked at the end regardless of direction, rather than flipping
           // to the front on descending like a normal numeric column would.
           cmp = a.rank == null && b.rank == null ? 0 : a.rank == null ? 1 : -1;
+        } else if (key === "due" && (a.dueDiff == null || b.dueDiff == null)) {
+          // New cards (shown as "—", no due date yet) same deal — always
+          // parked at the end, not flipped to the front on descending.
+          cmp = a.dueDiff == null && b.dueDiff == null ? 0 : a.dueDiff == null ? 1 : -1;
         } else {
           cmp = compareByKey(a, b, key) * dir;
         }
