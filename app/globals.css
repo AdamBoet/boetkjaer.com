@@ -49,10 +49,15 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  /* 35px cycle (14px dash, 21px gap) — divides evenly into both the box's
-     full 280px side (8 dashes) and its 140px half, so the pattern's phase
-     always lands on a dash boundary exactly at center: the cross meets
-     cleanly in the middle instead of a stray gap or dash overlap there. */
+  /* 35px cycle (14px dash, 21px gap) — divides evenly into the box's full
+     280px side (8 dashes). Dashes start at each 35px boundary (0, 35, 70…),
+     so without a phase shift the boundary that lands exactly at center
+     (140) starts a dash on one side but only a bare gap on the other —
+     not mirrored, just "happens to line up." Shifting the repeat's origin
+     by half a dash-width (-7px, a quarter of the 35px cycle plus half of
+     14px) instead centers an actual dash ON the midpoint, so it extends
+     evenly onto both sides — a true mirror image, not a coincidence of
+     where a boundary happens to fall. */
   background-image:
     repeating-linear-gradient(to bottom, #d4d4d8 0, #d4d4d8 14px, transparent 14px, transparent 35px),
     repeating-linear-gradient(to right, #d4d4d8 0, #d4d4d8 14px, transparent 14px, transparent 35px);
@@ -63,7 +68,7 @@
      phases out of sync with each other and the pattern visibly asymmetric.
      A fixed size keeps the repeat cycle itself always exactly 35px. */
   background-size: 1px 280px, 280px 1px;
-  background-position: 50% 0, 0 50%;
+  background-position: 50% -7px, -7px 50%;
   background-repeat: no-repeat, no-repeat;
   opacity: 0;
   transition: opacity 250ms ease;
