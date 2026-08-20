@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { LEVELS, type Hsk3Coverage } from "./Hsk3Grid";
 import { type HanziCard } from "./CharacterGrid";
@@ -794,13 +794,28 @@ export default function BrowseTab({
   const rowVirtualizer = useVirtualizer({
     count: sorted.length,
     getScrollElement: () => tableRef.current,
-    estimateSize: () => 41,
+    // The selected row's estimate is bumped up front to roughly the inline
+    // editor's real height — otherwise the virtualizer's first paint still
+    // positions the *next* row at old_top + 41px (the plain-row estimate)
+    // and only shifts it down once a ResizeObserver callback catches up,
+    // which visibly overlapped the editor with the row(s) below it for a
+    // frame or more.
+    estimateSize: (index) => (sorted[index]?.id === selectedId ? 480 : 41),
     overscan: 12,
     // A selected row grows to show its inline editor, so row height isn't
     // uniform — measure the actual rendered height instead of trusting the
     // estimate for every row.
     measureElement: (el) => el.getBoundingClientRect().height,
   });
+
+  // Force an immediate remeasure the moment a row is selected/deselected,
+  // rather than waiting on the virtualizer's own ResizeObserver callback to
+  // notice the height change — that callback can lag a frame or more behind
+  // the paint, which is what let the editor and the row(s) below it render
+  // overlapping for a moment.
+  useLayoutEffect(() => {
+    rowVirtualizer.measure();
+  }, [selectedId, rowVirtualizer]);
 
   // Arrow-key navigation between rows while the editor is open — skipped
   // while typing in one of the editor's own fields, where arrows should
