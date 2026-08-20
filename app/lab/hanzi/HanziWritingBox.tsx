@@ -712,14 +712,14 @@ export default function HanziWritingBox({
           )}
         </div>
 
-        {showReference && (
-          <div className="md:hidden flex flex-col items-center gap-2">
-            <button
-              onClick={triggerHint}
-              className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300"
-            >
-              Hint
-            </button>
+        <div className="md:hidden flex flex-col items-center gap-2">
+          <button
+            onClick={triggerHint}
+            className="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300"
+          >
+            Hint
+          </button>
+          {showReference && (
             <button
               onClick={() => setShowOutline(!helpSettings.showOutline)}
               aria-pressed={helpSettings.showOutline}
@@ -731,8 +731,8 @@ export default function HanziWritingBox({
             >
               Background character
             </button>
-          </div>
-        )}
+          )}
+        </div>
 
         {loadError && (
           <div className="flex items-center justify-center gap-3 text-xs text-zinc-500">

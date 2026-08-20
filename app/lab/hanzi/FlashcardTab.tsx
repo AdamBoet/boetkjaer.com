@@ -409,7 +409,11 @@ function buildQueue(
     }
   }
   return {
-    queue: [...shuffle(due).slice(0, maxReviews), ...shuffle(newOnes).slice(0, newCardsLimit)],
+    // Interleaved, not due-then-new — with a large due backlog, appending
+    // new cards after all of it meant they'd only ever come up once every
+    // due card in the session had already been cleared, which in practice
+    // was "never" for a big deck.
+    queue: shuffle([...due.slice(0, maxReviews), ...newOnes.slice(0, newCardsLimit)]),
     pending,
   };
 }
