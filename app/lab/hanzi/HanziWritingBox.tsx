@@ -161,7 +161,7 @@ function hideOfficialStrokes(writer: HanziWriter | null) {
   _renderState?.updateState({ character: { main: { opacity: 0 } } });
 }
 
-function isEditableTarget(target: EventTarget | null): boolean {
+export function isEditableTarget(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
   return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
 }
@@ -371,10 +371,10 @@ export default function HanziWritingBox({
         if (trackpadModeRef.current) setTrackpadModeValue(false);
         return;
       }
-      if (e.key === "t" || e.key === "T") {
-        toggleTrackpadMode();
-        return;
-      }
+      // "T" is handled once, globally, by TrackpadModeProvider — it needs
+      // to work even while this box isn't mounted (e.g. viewing the
+      // revealed static preview), and handling it here too would
+      // double-toggle on every press whenever a box is mounted.
       if ((e.key === "s" || e.key === "S") && showReference) {
         setShowOutline(!helpSettingsRef.current.showOutline);
         return;

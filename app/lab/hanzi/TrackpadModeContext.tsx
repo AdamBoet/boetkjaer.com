@@ -30,6 +30,11 @@ const defaultCtx: Ctx = {
   registerToggleHandler: () => {},
 };
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+}
+
 const TrackpadModeContext = createContext<Ctx>(defaultCtx);
 
 export function TrackpadModeProvider({ children }: { children: React.ReactNode }) {
@@ -45,7 +50,16 @@ export function TrackpadModeProvider({ children }: { children: React.ReactNode }
   const handlerRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    setTrackpadMode(localStorage.getItem(TRACKPAD_MODE_KEY) === "1");
+    // Every new review session starts with trackpad mode off, regardless of
+    // whether a previous session left it on — it's meant as an in-session
+    // convenience once you turn it on, not a sticky global default. This
+    // provider already remounts fresh per deck (keyed on selectedDeck in
+    // FlashcardTab), so "on mount" here means "session start": force the
+    // persisted flag back to off rather than reading whatever it still says
+    // from before.
+    localStorage.setItem(TRACKPAD_MODE_KEY, "0");
+    setTrackpadMode(false);
+
     function handleChanged() {
       setTrackpadMode(localStorage.getItem(TRACKPAD_MODE_KEY) === "1");
     }
@@ -62,6 +76,24 @@ export function TrackpadModeProvider({ children }: { children: React.ReactNode }
     localStorage.setItem(TRACKPAD_MODE_KEY, next ? "1" : "0");
     window.dispatchEvent(new Event(TRACKPAD_CHANGED_EVENT));
   }, []);
+
+  // A single, always-present "T" listener for the whole review session —
+  // not just while a HanziWritingBox happens to be mounted (it wasn't
+  // reachable at all while viewing the revealed static preview, which has
+  // no box and thus no keydown handler of its own). `toggle` already
+  // delegates to the mounted box's own toggle when one exists (needed for
+  // the actual pointer-lock request to happen inside this same keypress),
+  // or falls back to flipping the persisted flag directly — either way,
+  // this is now the *only* place "T" is handled, so HanziWritingBox no
+  // longer has its own "t"/"T" case (that would double-toggle otherwise).
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (isEditableTarget(e.target)) return;
+      if (e.key === "t" || e.key === "T") toggle();
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [toggle]);
 
   const registerToggleHandler = useCallback((fn: (() => void) | null) => {
     handlerRef.current = fn;
