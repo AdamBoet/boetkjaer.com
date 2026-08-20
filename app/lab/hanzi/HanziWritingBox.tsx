@@ -472,8 +472,23 @@ export default function HanziWritingBox({
   // is what actually gets graded.
   useEffect(() => {
     if (!locked) return;
+    // The very first mousemove event delivered right after a Pointer Lock
+    // engages is a known browser quirk — its movementX/movementY can be a
+    // large, bogus spike (observed to reflect stuff like the cursor's
+    // pre-lock position rather than an actual relative delta), instead of
+    // the small delta a real trackpad nudge would produce. Applied
+    // literally, that one event can fling the virtual pen far from the
+    // correct starting point in a single step — a stroke that then fails
+    // to match anything, immediately, every time, right as the pen was
+    // otherwise correctly primed at the real expected start. Discard just
+    // that first event's delta; every event after it behaves normally.
+    let firstMove = true;
 
     function handleMouseMove(e: MouseEvent) {
+      if (firstMove) {
+        firstMove = false;
+        return;
+      }
       // Ignore movement until the quiz has actually finished loading this
       // character's stroke data — starting a stroke any earlier would use
       // the placeholder canvas-center position instead of the real expected
@@ -485,9 +500,17 @@ export default function HanziWritingBox({
       if (!quiz) return;
 
       const { sensitivity, idleMs } = trackpadSettingsRef.current;
+      // A hard cap on the raw per-event delta, on top of the sensitivity
+      // multiplier — defends against any other stray oversized event (not
+      // just the known first-event spike above) teleporting the pen instead
+      // of nudging it, which would otherwise read as a clean straight jump
+      // through the middle of the canvas rather than a real drawn stroke.
+      const MAX_DELTA = 40;
+      const dx = Math.max(-MAX_DELTA, Math.min(MAX_DELTA, e.movementX));
+      const dy = Math.max(-MAX_DELTA, Math.min(MAX_DELTA, e.movementY));
       virtualPos.current = {
-        x: Math.max(0, Math.min(CANVAS_SIZE, virtualPos.current.x + e.movementX * sensitivity)),
-        y: Math.max(0, Math.min(CANVAS_SIZE, virtualPos.current.y + e.movementY * sensitivity)),
+        x: Math.max(0, Math.min(CANVAS_SIZE, virtualPos.current.x + dx * sensitivity)),
+        y: Math.max(0, Math.min(CANVAS_SIZE, virtualPos.current.y + dy * sensitivity)),
       };
 
       if (!strokeActive.current) {
