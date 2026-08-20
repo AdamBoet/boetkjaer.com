@@ -41,6 +41,7 @@ export const DECK_LABELS: Record<DeckKey, string> = {
 
 const DEFAULT_MAX_REVIEWS = 9999;
 const DEFAULT_NEW_CARDS = 5;
+const NEW_TODAY_CACHE_KEY = "hanziNewTodayCache";
 
 function maxReviewsKey(deck: DeckKey) {
   return `flashcard_max_reviews_${deck}`;
@@ -1534,6 +1535,28 @@ export default function FlashcardTab({
   // today's review_type-0 rows by (source, db_id) gives an accurate count
   // without needing a dedicated "was this a new card" column.
   const [newToday, setNewToday] = useState<Record<DeckKey, number>>({ hanzi: 0, hsk3: 0, random_words: 0, idioms: 0 });
+  // The fetch below needs a network round trip, so on every page load the
+  // deck menu would briefly show 0 for "introduced today" (understating the
+  // remaining New count) before flipping to the real value a moment later —
+  // a visible flash on every visit. A same-day cached value is very likely
+  // still correct (or will be corrected within a moment anyway), so read it
+  // synchronously right after mount — before the network fetch even starts —
+  // instead of waiting on the round trip just to show what was already known
+  // a minute ago. Can't read it in the initial useState itself: that runs
+  // during the SSR-matching hydration render too, and localStorage isn't
+  // available server-side, so the hydration render must still start from
+  // the same zeros the server rendered to avoid a mismatch.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(NEW_TODAY_CACHE_KEY);
+      if (!raw) return;
+      const cached = JSON.parse(raw) as { date: string; counts: Record<DeckKey, number> };
+      if (cached.date === new Date().toDateString()) setNewToday(cached.counts);
+    } catch {
+      // Corrupt/old cache shape — just falls through to the real fetch below.
+    }
+  }, []);
+
   useEffect(() => {
     // Re-fetches every time the deck menu becomes visible again (including
     // right after finishing a review session, since selectedDeck going back
@@ -1564,12 +1587,14 @@ export default function FlashcardTab({
         for (const r of todays) {
           if (r.review_type === 0 && seenByDeck[r.source]) seenByDeck[r.source].add(r.db_id);
         }
-        setNewToday({
+        const counts = {
           hanzi: seenByDeck.hanzi.size,
           hsk3: seenByDeck.hsk3.size,
           random_words: seenByDeck.random_words.size,
           idioms: seenByDeck.idioms.size,
-        });
+        };
+        setNewToday(counts);
+        localStorage.setItem(NEW_TODAY_CACHE_KEY, JSON.stringify({ date: todayKey, counts }));
       })
       .catch(() => {});
   }, [selectedDeck]);
