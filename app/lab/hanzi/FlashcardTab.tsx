@@ -884,7 +884,17 @@ export function EditPanel({
 }: {
   card: DueCard;
   onClose: () => void;
-  onSave: (front: string, sub: string, back: string, components: string, examples: string, category: string) => void;
+  onSave: (
+    front: string,
+    sub: string,
+    back: string,
+    components: string,
+    examples: string,
+    category: string,
+    sentence: string,
+    sentencePinyin: string,
+    sentenceMeaning: string
+  ) => void;
   onPictureUpdated: (url: string | null) => void;
 }) {
   const [front, setFront] = useState(card.front);
@@ -893,6 +903,9 @@ export function EditPanel({
   const [components, setComponents] = useState(card.components ?? "");
   const [examples, setExamples] = useState(card.examples ?? "");
   const [category, setCategory] = useState(card.category ?? "");
+  const [sentence, setSentence] = useState(card.sentence ?? "");
+  const [sentencePinyin, setSentencePinyin] = useState(card.sentencePinyin ?? "");
+  const [sentenceMeaning, setSentenceMeaning] = useState(card.sentenceMeaning ?? "");
   const [pictureUrl, setPictureUrl] = useState(card.pictureUrl ?? null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -1035,6 +1048,36 @@ export function EditPanel({
             </select>
           </label>
         )}
+        {card.source !== "hanzi" && (
+          <>
+            <label className="block space-y-1">
+              <span className="text-xs text-zinc-500">Example sentence</span>
+              <textarea
+                value={sentence}
+                onChange={(e) => setSentence(e.target.value)}
+                rows={2}
+                className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs text-zinc-500">Example pinyin</span>
+              <input
+                value={sentencePinyin}
+                onChange={(e) => setSentencePinyin(e.target.value)}
+                className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs text-zinc-500">Example meaning</span>
+              <textarea
+                value={sentenceMeaning}
+                onChange={(e) => setSentenceMeaning(e.target.value)}
+                rows={2}
+                className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              />
+            </label>
+          </>
+        )}
         {card.source !== "hsk3" && (
           <div className="space-y-1">
             <span className="text-xs text-zinc-500">Picture</span>
@@ -1064,7 +1107,7 @@ export function EditPanel({
             Cancel
           </button>
           <button
-            onClick={() => onSave(front, sub, back, components, examples, category)}
+            onClick={() => onSave(front, sub, back, components, examples, category, sentence, sentencePinyin, sentenceMeaning)}
             className="flex-1 rounded-lg px-3 py-1.5 text-xs font-medium text-white bg-zinc-800 dark:bg-zinc-200 dark:text-zinc-900 hover:opacity-90 transition-colors"
           >
             Save
@@ -1083,11 +1126,18 @@ export function buildEditUpdates(
   back: string,
   components?: string,
   examples?: string,
-  category?: string
+  category?: string,
+  sentence?: string,
+  sentencePinyin?: string,
+  sentenceMeaning?: string
 ): Record<string, unknown> {
   if (source === "hanzi") return { character: front, pronunciation: sub, front: back, components, examples };
-  if (source === "idioms") return { word: front, pinyin: sub, meaning: back, category: category || null };
-  return { word: front, pinyin: sub, meaning: back };
+  if (source === "hsk3") {
+    return { word: front, pinyin: sub, meaning: back, sentence, sentence_pinyin: sentencePinyin, sentence_meaning: sentenceMeaning };
+  }
+  const wp: Record<string, unknown> = { word: front, pinyin: sub, meaning: back, example: sentence, example_pinyin: sentencePinyin, example_meaning: sentenceMeaning };
+  if (source === "idioms") wp.category = category || null;
+  return wp;
 }
 
 export type CardStatPatch = {
@@ -1413,13 +1463,17 @@ function ReviewSession({
             {revealed && (
               <div className="mt-8 space-y-1.5 text-center animate-card-reveal-in">
                 {current.source !== "hanzi" && (current.sub || current.back) && (
-                  <p className="text-2xl flex items-center justify-center gap-2 flex-wrap">
-                    {current.sub && <span className="text-emerald-700 dark:text-emerald-500">{current.sub}</span>}
-                    {current.back && (
-                      <span className="text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.back}</span>
+                  <div className="space-y-1">
+                    {current.sub && (
+                      <p className="text-2xl flex items-center justify-center gap-2">
+                        <span className="text-emerald-700 dark:text-emerald-500">{current.sub}</span>
+                        <AudioButton src={current.audioUrl} label="Play pronunciation" />
+                      </p>
                     )}
-                    <AudioButton src={current.audioUrl} label="Play pronunciation" />
-                  </p>
+                    {current.back && (
+                      <p className="text-2xl text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.back}</p>
+                    )}
+                  </div>
                 )}
                 {current.examples && (
                   <p className="text-2xl text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.examples}</p>
@@ -1496,8 +1550,12 @@ function ReviewSession({
         <EditPanel
           card={current}
           onClose={() => setEditOpen(false)}
-          onSave={(front, sub, back, components, examples, category) => {
-            gradeCard(current.source, current.dbId, buildEditUpdates(current.source, front, sub, back, components, examples, category)).catch((e) => {
+          onSave={(front, sub, back, components, examples, category, sentence, sentencePinyin, sentenceMeaning) => {
+            gradeCard(
+              current.source,
+              current.dbId,
+              buildEditUpdates(current.source, front, sub, back, components, examples, category, sentence, sentencePinyin, sentenceMeaning)
+            ).catch((e) => {
               setSaveError(e instanceof Error ? e.message : "Failed to save edit.");
             });
             setQueue((q) =>
@@ -1510,6 +1568,7 @@ function ReviewSession({
                       back,
                       ...(current.source === "hanzi" ? { components, examples } : {}),
                       ...(current.source === "idioms" ? { category: (category || null) as DueCard["category"] } : {}),
+                      ...(current.source !== "hanzi" ? { sentence, sentencePinyin, sentenceMeaning } : {}),
                     }
                   : c
               )

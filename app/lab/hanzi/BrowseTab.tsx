@@ -345,6 +345,10 @@ function CardEditor({
   const [examples, setExamples] = useState(row.examples ?? "");
   // Idioms-only — no equivalent on hanzi/hsk3/random_words rows.
   const [category, setCategory] = useState(row.category ?? "");
+  // hsk3/random_words/idioms only — no equivalent on hanzi rows.
+  const [sentence, setSentence] = useState(row.sentence ?? "");
+  const [sentencePinyin, setSentencePinyin] = useState(row.sentencePinyin ?? "");
+  const [sentenceMeaning, setSentenceMeaning] = useState(row.sentenceMeaning ?? "");
   const [pictureUrl, setPictureUrl] = useState(row.pictureUrl ?? null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -356,13 +360,17 @@ function CardEditor({
     sub !== row.sub ||
     back !== row.back ||
     (row.source === "hanzi" && (components !== (row.components ?? "") || examples !== (row.examples ?? ""))) ||
-    (row.source === "idioms" && category !== (row.category ?? ""));
+    (row.source === "idioms" && category !== (row.category ?? "")) ||
+    (row.source !== "hanzi" &&
+      (sentence !== (row.sentence ?? "") ||
+        sentencePinyin !== (row.sentencePinyin ?? "") ||
+        sentenceMeaning !== (row.sentenceMeaning ?? "")));
 
   async function save() {
     setSaving(true);
     setError(null);
     try {
-      const updates = buildEditUpdates(row.source, front, sub, back, undefined, undefined, category);
+      const updates = buildEditUpdates(row.source, front, sub, back, undefined, undefined, category, sentence, sentencePinyin, sentenceMeaning);
       if (row.source === "hanzi") Object.assign(updates, { components, examples });
       await gradeCard(row.source, row.dbId, updates);
       onSaved({
@@ -371,6 +379,7 @@ function CardEditor({
         back,
         ...(row.source === "hanzi" ? { components, examples } : {}),
         ...(row.source === "idioms" ? { category: (category || null) as DueCard["category"] } : {}),
+        ...(row.source !== "hanzi" ? { sentence, sentencePinyin, sentenceMeaning } : {}),
       });
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 1500);
@@ -533,6 +542,36 @@ function CardEditor({
               <option value="idiom">成语 · Idiom</option>
             </select>
           </label>
+        )}
+        {row.source !== "hanzi" && (
+          <>
+            <label className="block space-y-1 sm:col-span-2">
+              <span className="text-xs text-zinc-500">Example sentence</span>
+              <textarea
+                value={sentence}
+                onChange={(e) => setSentence(e.target.value)}
+                rows={2}
+                className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-xs text-zinc-500">Example pinyin</span>
+              <input
+                value={sentencePinyin}
+                onChange={(e) => setSentencePinyin(e.target.value)}
+                className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              />
+            </label>
+            <label className="block space-y-1 sm:col-span-2">
+              <span className="text-xs text-zinc-500">Example meaning</span>
+              <textarea
+                value={sentenceMeaning}
+                onChange={(e) => setSentenceMeaning(e.target.value)}
+                rows={2}
+                className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              />
+            </label>
+          </>
         )}
       </div>
 
