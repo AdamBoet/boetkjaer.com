@@ -977,7 +977,9 @@ export function EditPanel({
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-sm rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl p-5 space-y-3"
       >
-        <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">Edit card</p>
+        <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">
+          Edit card{card.rank != null && <span className="font-normal text-zinc-400 dark:text-zinc-500"> · #{card.rank}</span>}
+        </p>
         <label className="block space-y-1">
           <span className="text-xs text-zinc-500">Front</span>
           <input
