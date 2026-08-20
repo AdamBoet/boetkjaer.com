@@ -291,9 +291,14 @@ function deleteReviewLog(source: DeckKey, dbId: number | string, reviewId: numbe
 interface DeckCounts {
   key: DeckKey;
   label: string;
-  newCount: number;
+  // null until `mounted` — these depend on a per-device localStorage cap
+  // that isn't known during SSR/the hydration render, and guessing with a
+  // hard-coded default was itself the bug: it visibly flashed whenever a
+  // user's real setting differed from that default. No number at all for
+  // one frame reads as "still loading," not as a wrong answer.
+  newCount: number | null;
   learnCount: number;
-  dueCount: number;
+  dueCount: number | null;
 }
 
 function dueDiffFrom(card: { mod?: number | null; interval?: number }): number | null {
@@ -447,21 +452,21 @@ function countDeck(key: DeckKey, items: AnyCard[], mounted: boolean, newIntroduc
     else if (isDueForReview(item.reps, diff)) dueCount++;
   }
   // Session-limit caps come from localStorage, which isn't available during
-  // SSR/the initial client render — using it unconditionally here would make
-  // that first render disagree with the server and trigger a hydration
-  // mismatch. Fall back to the same defaults the server sees until mounted.
+  // SSR/the initial client render. newCount/dueCount stay null until
+  // mounted rather than guessing with a hard-coded default in the meantime
+  // — guessing was itself the bug (see the DeckCounts comment above).
   // "New cards per session" is meant as a per-day allowance, not something
   // that resets every time the deck is re-entered — subtract however many
   // distinct new cards have already been introduced today (see the
   // newIntroducedToday computation below) so the number actually counts
   // down over the course of a day instead of always showing the raw cap.
-  const cap = Math.max(0, (mounted ? loadNewCards(key) : DEFAULT_NEW_CARDS) - newIntroducedToday);
+  const cap = mounted ? Math.max(0, loadNewCards(key) - newIntroducedToday) : null;
   return {
     key,
     label: DECK_LABELS[key],
-    newCount: Math.min(newCount, cap),
+    newCount: cap == null ? null : Math.min(newCount, cap),
     learnCount,
-    dueCount: Math.min(dueCount, mounted ? loadMaxReviews(key) : DEFAULT_MAX_REVIEWS),
+    dueCount: mounted ? Math.min(dueCount, loadMaxReviews(key)) : null,
   };
 }
 
@@ -469,10 +474,10 @@ function countDeck(key: DeckKey, items: AnyCard[], mounted: boolean, newIntroduc
 // daily limits (e.g. new cards/day) and today's scheduling state — not just
 // "how many cards have never been studied". Rather than reimplement that,
 // ask AnkiConnect directly so the numbers always match Anki's own screen.
-function CountCell({ value, color }: { value: number; color: string }) {
+function CountCell({ value, color }: { value: number | null; color: string }) {
   return (
-    <span className={`block text-center tabular-nums text-base font-semibold ${value > 0 ? color : "text-zinc-300 dark:text-zinc-600"}`}>
-      {value}
+    <span className={`block text-center tabular-nums text-base font-semibold ${value != null && value > 0 ? color : "text-zinc-300 dark:text-zinc-600"}`}>
+      {value ?? ""}
     </span>
   );
 }
@@ -556,10 +561,16 @@ function DeckMenu({
   const [expanded, setExpanded] = useState(true);
   const [, forceRerender] = useState(0);
 
-  const totals = decks.reduce(
-    (acc, d) => ({ newCount: acc.newCount + d.newCount, learnCount: acc.learnCount + d.learnCount, dueCount: acc.dueCount + d.dueCount }),
-    { newCount: 0, learnCount: 0, dueCount: 0 }
-  );
+  // Every deck's newCount/dueCount go null (or not) together — they're all
+  // gated by the same `mounted` flag in countDeck — so any one deck being
+  // null means the aggregate row should stay blank too, not add up to a
+  // premature 0.
+  const countsReady = decks.every((d) => d.newCount != null && d.dueCount != null);
+  const totals = {
+    newCount: countsReady ? decks.reduce((s, d) => s + (d.newCount ?? 0), 0) : null,
+    learnCount: decks.reduce((s, d) => s + d.learnCount, 0),
+    dueCount: countsReady ? decks.reduce((s, d) => s + (d.dueCount ?? 0), 0) : null,
+  };
 
   return (
     <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none overflow-hidden">
@@ -591,13 +602,16 @@ function DeckMenu({
         <span />
       </button>
       {expanded && decks.map((d) => {
-        const total = d.newCount + d.learnCount + d.dueCount;
+        // Not yet known (pre-mount) shouldn't read as "definitely empty" —
+        // only disable once newCount/dueCount have actually loaded.
+        const notYetKnown = d.newCount == null || d.dueCount == null;
+        const total = (d.newCount ?? 0) + d.learnCount + (d.dueCount ?? 0);
         return (
           <div key={d.key} className="relative border-b border-zinc-100 dark:border-zinc-800 last:border-b-0 group">
             <div className="w-full grid grid-cols-[1fr_36px_36px_36px_28px] sm:grid-cols-[minmax(240px,auto)_68px_68px_68px_32px] items-center gap-2 sm:gap-3 px-3 sm:px-5 py-3.5 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
               <button
                 onClick={() => onSelect(d.key)}
-                disabled={total === 0}
+                disabled={!notYetKnown && total === 0}
                 className="pl-[18px] text-left text-sm text-zinc-800 dark:text-zinc-100 disabled:cursor-default disabled:opacity-60 hover:underline"
               >
                 {d.label}
