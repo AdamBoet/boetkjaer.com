@@ -365,19 +365,35 @@ function pinyinFrontHeadline(sub: string, back: string): string {
   return `${sub} ${back.slice(parenIdx)}`;
 }
 
-function shuffle<T>(arr: T[]): T[] {
-  const out = [...arr];
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
+// Anki doesn't shuffle new and due cards into one random pool — it gathers
+// each separately (in a stable order) and interleaves new cards into the
+// due list at a fixed, ratio-based spacing, so they show up at regular
+// intervals instead of clustering or vanishing to the very end. Mirrors
+// that instead of randomizing: same deck state always produces the same
+// session order, and a `step`-cards-apart new card is never a surprise.
+function interleave<T>(due: T[], newOnes: T[]): T[] {
+  if (newOnes.length === 0) return due;
+  if (due.length === 0) return newOnes;
+  const step = due.length / newOnes.length;
+  const out: T[] = [];
+  let newIdx = 0;
+  let nextInsertAt = step;
+  for (let i = 0; i < due.length; i++) {
+    out.push(due[i]);
+    if (newIdx < newOnes.length && i + 1 >= nextInsertAt) {
+      out.push(newOnes[newIdx++]);
+      nextInsertAt += step;
+    }
   }
+  while (newIdx < newOnes.length) out.push(newOnes[newIdx++]);
   return out;
 }
 
-// Due/overdue cards in random order (not sorted by how overdue they are —
-// with a whole deck often all overdue at once, "most overdue first" doesn't
-// add real priority), capped at `maxReviews`, then up to `newCardsLimit`
-// never-studied cards appended after.
+// Due/overdue and new cards each keep their existing stable order (due:
+// whatever order they were fetched in, effectively rank/frequency for
+// hanzi; new: same) — capped at `maxReviews`/`newCardsLimit`, then
+// interleaved. No randomization, so re-entering the same deck without
+// grading anything gives the same session back.
 function buildQueue(
   items: { key: DeckKey; card: AnyCard }[],
   maxReviews: number,
@@ -413,7 +429,7 @@ function buildQueue(
     // new cards after all of it meant they'd only ever come up once every
     // due card in the session had already been cleared, which in practice
     // was "never" for a big deck.
-    queue: shuffle([...due.slice(0, maxReviews), ...newOnes.slice(0, newCardsLimit)]),
+    queue: interleave(due.slice(0, maxReviews), newOnes.slice(0, newCardsLimit)),
     pending,
   };
 }
@@ -1363,7 +1379,7 @@ function ReviewSession({
               </div>
             )}
 
-            {revealed && current.components && (
+            {current.components && (
               <p className="mt-1.5 text-sm text-zinc-400 dark:text-zinc-500 text-center">{current.components}</p>
             )}
 
