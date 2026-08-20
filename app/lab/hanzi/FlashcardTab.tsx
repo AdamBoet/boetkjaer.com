@@ -7,6 +7,7 @@ import { type Hsk3Coverage, type Hsk3Word } from "./Hsk3Grid";
 import HanziWritingBox from "./HanziWritingBox";
 import HanziCharacterPreview from "./HanziCharacterPreview";
 import { TrackpadModeProvider, useTrackpadModeContext } from "./TrackpadModeContext";
+import { GridPrefProvider, useGridPref } from "./GridPrefContext";
 
 export interface WordPhrase {
   note_id: number;
@@ -697,6 +698,24 @@ function TrackpadToggleButton() {
   );
 }
 
+function GridToggleButton() {
+  const { showGrid, toggle } = useGridPref();
+  return (
+    <button
+      onClick={toggle}
+      aria-pressed={showGrid}
+      title="Toggle writing-box grid"
+      className={`inline-flex items-center h-4 leading-none text-sm transition-colors ${
+        showGrid
+          ? "text-blue-500 dark:text-blue-400 [text-shadow:0_0_10px_rgba(59,130,246,0.85)]"
+          : "text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"
+      }`}
+    >
+      田
+    </button>
+  );
+}
+
 function HotkeysPanel() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -1342,8 +1361,9 @@ function ReviewSession({
             </svg>
           </button>
           <AudioControl />
-          <div className="hidden md:block">
+          <div className="hidden md:flex items-center gap-4">
             <TrackpadToggleButton />
+            <GridToggleButton />
           </div>
           <div className="hidden md:block">
             <HotkeysPanel />
@@ -1471,7 +1491,7 @@ function ReviewSession({
               {GRADES.map(({ key, label }) => {
                 return (
                   <div key={key} className="flex flex-col items-center gap-1.5">
-                    <span className="text-xs text-zinc-400 dark:text-zinc-500">{previewLabel(current, key)}</span>
+                    <span className="text-xs text-zinc-600 dark:text-zinc-300">{previewLabel(current, key)}</span>
                     <button
                       onClick={(e) => { e.currentTarget.blur(); grade.current(key); }}
                       className="w-full rounded-full border border-zinc-300 dark:border-zinc-600 py-2 text-sm text-zinc-800 dark:text-zinc-100 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
@@ -1675,13 +1695,15 @@ export default function FlashcardTab({
 
   return (
     <TrackpadModeProvider key={selectedDeck}>
-      <ReviewSession
-        initialQueue={queue}
-        initialPending={initialPending}
-        onExit={() => setSelectedDeck(null)}
-        onJumpToCard={onJumpToCard}
-        onCardUpdated={onCardUpdated}
-      />
+      <GridPrefProvider>
+        <ReviewSession
+          initialQueue={queue}
+          initialPending={initialPending}
+          onExit={() => setSelectedDeck(null)}
+          onJumpToCard={onJumpToCard}
+          onCardUpdated={onCardUpdated}
+        />
+      </GridPrefProvider>
     </TrackpadModeProvider>
   );
 }

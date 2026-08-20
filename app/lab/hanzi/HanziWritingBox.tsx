@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import HanziWriter from "hanzi-writer";
 import { useTrackpadModeContext, TRACKPAD_CHANGED_EVENT } from "./TrackpadModeContext";
+import { useGridPref } from "./GridPrefContext";
 
 const TRACKPAD_MODE_KEY = "hanziTrackpadMode";
 const CANVAS_SIZE = 280;
@@ -17,12 +18,16 @@ const CANVAS_SIZE = 280;
 export const GRID_BACKGROUND_STYLE: React.CSSProperties = {
   backgroundColor: "#ffffff",
   backgroundImage:
-    "repeating-linear-gradient(to bottom, #e4e4e7 0, #e4e4e7 9px, transparent 9px, transparent 18px), " +
-    "repeating-linear-gradient(to right, #e4e4e7 0, #e4e4e7 9px, transparent 9px, transparent 18px)",
-  backgroundSize: "2px 100%, 100% 2px",
+    "repeating-linear-gradient(to bottom, #d4d4d8 0, #d4d4d8 3px, transparent 3px, transparent 6px), " +
+    "repeating-linear-gradient(to right, #d4d4d8 0, #d4d4d8 3px, transparent 3px, transparent 6px)",
+  backgroundSize: "1px 100%, 100% 1px",
   backgroundPosition: "50% 0, 0 50%",
   backgroundRepeat: "no-repeat, no-repeat",
 };
+const PLAIN_BACKGROUND_STYLE: React.CSSProperties = { backgroundColor: "#ffffff" };
+export function gridBoxStyle(showGrid: boolean): React.CSSProperties {
+  return showGrid ? GRID_BACKGROUND_STYLE : PLAIN_BACKGROUND_STYLE;
+}
 // hanzi-writer's own built-in defaults (confirmed from its source) — used as
 // our baseline rather than guessed numbers.
 const BASE_LENIENCY = 1;
@@ -236,6 +241,7 @@ export default function HanziWritingBox({
   const trackpadModeRef = useRef(trackpadMode);
   trackpadModeRef.current = trackpadMode;
   const { registerToggleHandler } = useTrackpadModeContext();
+  const { showGrid } = useGridPref();
 
   // Always call the latest onComplete — the writer-creation effect below is
   // keyed only on `character`, so a stale closure would otherwise capture
@@ -710,7 +716,7 @@ export default function HanziWritingBox({
                     ? "cursor-none border-blue-400 ring-4 ring-blue-500/60 shadow-[0_0_25px_6px_rgba(59,130,246,0.55)]"
                     : "border-zinc-200 dark:border-zinc-800"
                 }`}
-                style={{ width: 280, height: 280, ...GRID_BACKGROUND_STYLE }}
+                style={{ width: 280, height: 280, ...gridBoxStyle(showGrid) }}
               >
                 <div ref={targetRef} className="absolute inset-0" style={{ width: 280, height: 280 }} />
               </div>
@@ -720,7 +726,7 @@ export default function HanziWritingBox({
               <div className="hidden md:block space-y-1.5">
                 <div
                   className="relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800"
-                  style={{ width: 280, height: 280, ...GRID_BACKGROUND_STYLE }}
+                  style={{ width: 280, height: 280, ...gridBoxStyle(showGrid) }}
                 >
                   <div ref={referenceTargetRef} className="absolute inset-0" style={{ width: 280, height: 280 }} />
                 </div>
