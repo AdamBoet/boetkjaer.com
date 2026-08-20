@@ -1634,14 +1634,14 @@ export default function FlashcardTab({
 
   if (queue.length === 0) {
     return (
-      <div className="space-y-4 max-w-xl">
-        <button onClick={() => setSelectedDeck(null)} className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">
-          ← Decks
-        </button>
-        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-10 text-center">
+      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4 max-w-xl mx-auto">
+        <div className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-10 text-center">
           <p className="text-lg font-semibold text-emerald-600 dark:text-emerald-500">All caught up!</p>
           <p className="text-sm text-zinc-500 mt-1">Nothing due in this deck right now.</p>
         </div>
+        <button onClick={() => setSelectedDeck(null)} className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">
+          ← Decks
+        </button>
       </div>
     );
   }
