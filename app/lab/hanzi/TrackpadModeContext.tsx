@@ -46,20 +46,26 @@ export function TrackpadModeProvider({ children }: { children: React.ReactNode }
   // initial `false` default) instead of reflecting the real preference.
   // Reading localStorage directly means "no box mounted" just keeps showing
   // whatever the preference already says, which is what should happen.
-  const [trackpadMode, setTrackpadMode] = useState(false);
+  // Every new review session starts with trackpad mode off, regardless of
+  // whether a previous session left it on — it's meant as an in-session
+  // convenience once you turn it on, not a sticky global default. This
+  // provider already remounts fresh per deck (keyed on selectedDeck in
+  // FlashcardTab), so "on mount" here means "session start": force the
+  // persisted flag back to off. This has to happen in a useState lazy
+  // initializer (runs synchronously during render), not a useEffect —
+  // effects run child-first within a commit, so by the time this Provider's
+  // own effect would run, the first card's HanziWritingBox had *already*
+  // run its own mount effect and read the still-stale "1", requesting a
+  // real pointer lock and boosted leniency before the reset ever landed.
+  // The display correctly showed off, but trackpad was actually active
+  // underneath. A lazy initializer runs before any child renders at all.
+  const [trackpadMode, setTrackpadMode] = useState(() => {
+    if (typeof window !== "undefined") localStorage.setItem(TRACKPAD_MODE_KEY, "0");
+    return false;
+  });
   const handlerRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    // Every new review session starts with trackpad mode off, regardless of
-    // whether a previous session left it on — it's meant as an in-session
-    // convenience once you turn it on, not a sticky global default. This
-    // provider already remounts fresh per deck (keyed on selectedDeck in
-    // FlashcardTab), so "on mount" here means "session start": force the
-    // persisted flag back to off rather than reading whatever it still says
-    // from before.
-    localStorage.setItem(TRACKPAD_MODE_KEY, "0");
-    setTrackpadMode(false);
-
     function handleChanged() {
       setTrackpadMode(localStorage.getItem(TRACKPAD_MODE_KEY) === "1");
     }
