@@ -54,21 +54,19 @@
      border-box vs percentage sizing, a half-dash offset) kept landing on
      "meets at center" without actually being symmetric, and each fix was
      unverifiable without eyes on a real render. This sidesteps the whole
-     class of bug: each of the four line segments below is drawn starting
-     from the exact same point (140, 140) — the box's own center — so a
-     dash beginning right at that shared start point is a trivial geometric
-     fact for every ray, not something arithmetic could get subtly wrong.
+     class of bug: every dash below is an explicit <line> measured out from
+     the exact same point (140, 140) — the box's own center — along one of
+     the four rays, so symmetry is a trivial geometric fact, not something
+     arithmetic (stroke-dasharray cycles) could get subtly wrong. Exactly 4
+     dashes per ray, explicitly, rather than however many a repeating
+     pattern happens to fit — a dasharray-based approach kept overshooting
+     to 7-8 and reading as cluttered.
      background-position: center still keeps it correctly centered even if
      the box's actual rendered size drifts a px or two from 280 (border-box
      sizing, flex-shrink, etc.) — any overflow gets cropped equally from
-     all four sides rather than throwing the phase off.
-     stroke-dashoffset shifts each ray's pattern to start partway into a
-     *gap* rather than a dash — otherwise all four rays' first dash lands
-     right at the shared center point and overlaps into one oversized
-     plus-shape, clearly longer than the regular dashes further out. A
-     small dedicated + (same stroke-width as the dashes) marks the actual
-     center instead of a plain dot. */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280'%3E%3Cg stroke='%23d4d4d8' stroke-width='1' stroke-dasharray='18 8' stroke-dashoffset='-22'%3E%3Cline x1='140' y1='140' x2='140' y2='0'/%3E%3Cline x1='140' y1='140' x2='140' y2='280'/%3E%3Cline x1='140' y1='140' x2='0' y2='140'/%3E%3Cline x1='140' y1='140' x2='280' y2='140'/%3E%3C/g%3E%3Cg stroke='%23d4d4d8' stroke-width='1'%3E%3Cline x1='136' y1='140' x2='144' y2='140'/%3E%3Cline x1='140' y1='136' x2='140' y2='144'/%3E%3C/g%3E%3C/svg%3E");
+     all four sides rather than throwing the phase off. A small dedicated +
+     (same stroke-width as the dashes) marks the actual center. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280'%3E%3Cg stroke='%23d4d4d8' stroke-width='1'%3E%3Cline x1='140' y1='126' x2='140' y2='110'/%3E%3Cline x1='140' y1='100' x2='140' y2='84'/%3E%3Cline x1='140' y1='74' x2='140' y2='58'/%3E%3Cline x1='140' y1='48' x2='140' y2='32'/%3E%3Cline x1='140' y1='154' x2='140' y2='170'/%3E%3Cline x1='140' y1='180' x2='140' y2='196'/%3E%3Cline x1='140' y1='206' x2='140' y2='222'/%3E%3Cline x1='140' y1='232' x2='140' y2='248'/%3E%3Cline x1='126' y1='140' x2='110' y2='140'/%3E%3Cline x1='100' y1='140' x2='84' y2='140'/%3E%3Cline x1='74' y1='140' x2='58' y2='140'/%3E%3Cline x1='48' y1='140' x2='32' y2='140'/%3E%3Cline x1='154' y1='140' x2='170' y2='140'/%3E%3Cline x1='180' y1='140' x2='196' y2='140'/%3E%3Cline x1='206' y1='140' x2='222' y2='140'/%3E%3Cline x1='232' y1='140' x2='248' y2='140'/%3E%3C/g%3E%3Cg stroke='%23d4d4d8' stroke-width='1'%3E%3Cline x1='136' y1='140' x2='144' y2='140'/%3E%3Cline x1='140' y1='136' x2='140' y2='144'/%3E%3C/g%3E%3C/svg%3E");
   background-size: 280px 280px;
   background-position: center;
   background-repeat: no-repeat;
