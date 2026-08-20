@@ -15,6 +15,9 @@ export interface WordPhrase {
   word: string;
   pinyin: string | null;
   meaning: string | null;
+  // idioms only — "saying" (谚语) or "idiom" (成语), mirroring the two
+  // categories the Anki deck this was migrated from used.
+  category?: "saying" | "idiom" | null;
   example?: string | null;
   example_pinyin?: string | null;
   example_meaning?: string | null;
@@ -91,6 +94,7 @@ export interface DueCard {
   sentenceAudioUrl?: string | null; // hsk3 only
   pictureUrl?: string | null; // hanzi + wp only
   rank?: number; // hanzi only — frequency rank (lower = more common)
+  category?: "saying" | "idiom" | null; // idioms only
 }
 
 type Grade = "again" | "hard" | "good" | "easy";
@@ -351,7 +355,7 @@ export function toDueCard(key: DeckKey, card: AnyCard, dueDiff: number | null, i
   return {
     id: `wp-${p.note_id}`, dbId: p.note_id, source: p.source, front: p.word, sub: p.pinyin ?? "", back: p.meaning ?? "", dueDiff, isNew, ...stats,
     sentence: p.example ?? undefined, sentencePinyin: p.example_pinyin ?? undefined, sentenceMeaning: p.example_meaning ?? undefined,
-    pictureUrl: p.picture_url,
+    pictureUrl: p.picture_url, category: p.category,
   };
 }
 
@@ -880,7 +884,7 @@ export function EditPanel({
 }: {
   card: DueCard;
   onClose: () => void;
-  onSave: (front: string, sub: string, back: string, components: string, examples: string) => void;
+  onSave: (front: string, sub: string, back: string, components: string, examples: string, category: string) => void;
   onPictureUpdated: (url: string | null) => void;
 }) {
   const [front, setFront] = useState(card.front);
@@ -888,6 +892,7 @@ export function EditPanel({
   const [back, setBack] = useState(card.back);
   const [components, setComponents] = useState(card.components ?? "");
   const [examples, setExamples] = useState(card.examples ?? "");
+  const [category, setCategory] = useState(card.category ?? "");
   const [pictureUrl, setPictureUrl] = useState(card.pictureUrl ?? null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -1016,6 +1021,20 @@ export function EditPanel({
             </label>
           </>
         )}
+        {card.source === "idioms" && (
+          <label className="block space-y-1">
+            <span className="text-xs text-zinc-500">Category</span>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+            >
+              <option value="">—</option>
+              <option value="saying">谚语 · Saying</option>
+              <option value="idiom">成语 · Idiom</option>
+            </select>
+          </label>
+        )}
         {card.source !== "hsk3" && (
           <div className="space-y-1">
             <span className="text-xs text-zinc-500">Picture</span>
@@ -1045,7 +1064,7 @@ export function EditPanel({
             Cancel
           </button>
           <button
-            onClick={() => onSave(front, sub, back, components, examples)}
+            onClick={() => onSave(front, sub, back, components, examples, category)}
             className="flex-1 rounded-lg px-3 py-1.5 text-xs font-medium text-white bg-zinc-800 dark:bg-zinc-200 dark:text-zinc-900 hover:opacity-90 transition-colors"
           >
             Save
@@ -1063,9 +1082,11 @@ export function buildEditUpdates(
   sub: string,
   back: string,
   components?: string,
-  examples?: string
+  examples?: string,
+  category?: string
 ): Record<string, unknown> {
   if (source === "hanzi") return { character: front, pronunciation: sub, front: back, components, examples };
+  if (source === "idioms") return { word: front, pinyin: sub, meaning: back, category: category || null };
   return { word: front, pinyin: sub, meaning: back };
 }
 
@@ -1340,6 +1361,18 @@ function ReviewSession({
                 : current.front}
             </p>
 
+            {current.category && (
+              <p
+                className={`mt-1 text-xs font-semibold ${
+                  current.category === "saying"
+                    ? "text-emerald-700 dark:text-emerald-500"
+                    : "text-red-700 dark:text-red-500"
+                }`}
+              >
+                {current.category === "saying" ? "谚语 · Saying" : "成语 · Idiom"}
+              </p>
+            )}
+
             {!revealed && current.sentence && current.source !== "hanzi" && (
               <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800 text-center">
                 <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-line">{current.sentence}</p>
@@ -1463,14 +1496,21 @@ function ReviewSession({
         <EditPanel
           card={current}
           onClose={() => setEditOpen(false)}
-          onSave={(front, sub, back, components, examples) => {
-            gradeCard(current.source, current.dbId, buildEditUpdates(current.source, front, sub, back, components, examples)).catch((e) => {
+          onSave={(front, sub, back, components, examples, category) => {
+            gradeCard(current.source, current.dbId, buildEditUpdates(current.source, front, sub, back, components, examples, category)).catch((e) => {
               setSaveError(e instanceof Error ? e.message : "Failed to save edit.");
             });
             setQueue((q) =>
               q.map((c) =>
                 c.id === current.id
-                  ? { ...c, front, sub, back, ...(current.source === "hanzi" ? { components, examples } : {}) }
+                  ? {
+                      ...c,
+                      front,
+                      sub,
+                      back,
+                      ...(current.source === "hanzi" ? { components, examples } : {}),
+                      ...(current.source === "idioms" ? { category: (category || null) as DueCard["category"] } : {}),
+                    }
                   : c
               )
             );

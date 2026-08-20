@@ -343,6 +343,8 @@ function CardEditor({
   // Hanzi-only fields — no equivalent on hsk3/random_words/idioms rows.
   const [components, setComponents] = useState(row.components ?? "");
   const [examples, setExamples] = useState(row.examples ?? "");
+  // Idioms-only — no equivalent on hanzi/hsk3/random_words rows.
+  const [category, setCategory] = useState(row.category ?? "");
   const [pictureUrl, setPictureUrl] = useState(row.pictureUrl ?? null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -353,16 +355,23 @@ function CardEditor({
     front !== row.front ||
     sub !== row.sub ||
     back !== row.back ||
-    (row.source === "hanzi" && (components !== (row.components ?? "") || examples !== (row.examples ?? "")));
+    (row.source === "hanzi" && (components !== (row.components ?? "") || examples !== (row.examples ?? ""))) ||
+    (row.source === "idioms" && category !== (row.category ?? ""));
 
   async function save() {
     setSaving(true);
     setError(null);
     try {
-      const updates = buildEditUpdates(row.source, front, sub, back);
+      const updates = buildEditUpdates(row.source, front, sub, back, undefined, undefined, category);
       if (row.source === "hanzi") Object.assign(updates, { components, examples });
       await gradeCard(row.source, row.dbId, updates);
-      onSaved({ front, sub, back, ...(row.source === "hanzi" ? { components, examples } : {}) });
+      onSaved({
+        front,
+        sub,
+        back,
+        ...(row.source === "hanzi" ? { components, examples } : {}),
+        ...(row.source === "idioms" ? { category: (category || null) as DueCard["category"] } : {}),
+      });
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 1500);
     } catch (e) {
@@ -438,6 +447,17 @@ function CardEditor({
           <span className={`w-1.5 h-1.5 rounded-full ${STATUS_DOT[row.status]}`} />
           {STATUS_LABEL[row.status]}
         </span>
+        {row.category && (
+          <span
+            className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+              row.category === "saying"
+                ? "text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950"
+                : "text-red-700 dark:text-red-400 bg-red-100 dark:bg-red-950"
+            }`}
+          >
+            {row.category === "saying" ? "谚语 · Saying" : "成语 · Idiom"}
+          </span>
+        )}
         <div className="flex items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400 border-l border-zinc-200 dark:border-zinc-700 pl-3">
           <span>{row.levelLabel ?? DECK_LABELS[row.source]}</span>
           {row.rank != null && <span>position {row.rank}</span>}
@@ -499,6 +519,20 @@ function CardEditor({
               />
             </label>
           </>
+        )}
+        {row.source === "idioms" && (
+          <label className="block space-y-1">
+            <span className="text-xs text-zinc-500">Category</span>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+            >
+              <option value="">—</option>
+              <option value="saying">谚语 · Saying</option>
+              <option value="idiom">成语 · Idiom</option>
+            </select>
+          </label>
         )}
       </div>
 
