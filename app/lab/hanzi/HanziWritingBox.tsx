@@ -698,7 +698,7 @@ export default function HanziWritingBox({
             <div className="space-y-1.5">
               <div
                 ref={wrapperRef}
-                className={`relative overflow-hidden touch-none rounded-xl border transition-shadow duration-300 ${gridBoxClassName(showGrid)} ${
+                className={`relative overflow-hidden touch-none rounded-xl border shrink-0 transition-shadow duration-300 ${gridBoxClassName(showGrid)} ${
                   doneFlash
                     ? "border-emerald-400 ring-4 ring-emerald-500/60 shadow-[0_0_25px_6px_rgba(16,185,129,0.55)]"
                     : mistakeFlash
@@ -716,7 +716,7 @@ export default function HanziWritingBox({
             {showReference && (
               <div className="hidden md:block space-y-1.5">
                 <div
-                  className={`relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 ${gridBoxClassName(showGrid)}`}
+                  className={`relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 shrink-0 ${gridBoxClassName(showGrid)}`}
                   style={{ width: 280, height: 280, ...PLAIN_BACKGROUND_STYLE }}
                 >
                   <div ref={referenceTargetRef} className="absolute inset-0" style={{ width: 280, height: 280 }} />

@@ -49,27 +49,23 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  /* 35px cycle (14px dash, 21px gap) — divides evenly into the box's full
-     280px side (8 dashes). Dashes start at each 35px boundary (0, 35, 70…),
-     so without a phase shift the boundary that lands exactly at center
-     (140) starts a dash on one side but only a bare gap on the other —
-     not mirrored, just "happens to line up." Shifting the repeat's origin
-     by half a dash-width (-7px, a quarter of the 35px cycle plus half of
-     14px) instead centers an actual dash ON the midpoint, so it extends
-     evenly onto both sides — a true mirror image, not a coincidence of
-     where a boundary happens to fall. */
-  background-image:
-    repeating-linear-gradient(to bottom, #d4d4d8 0, #d4d4d8 14px, transparent 14px, transparent 35px),
-    repeating-linear-gradient(to right, #d4d4d8 0, #d4d4d8 14px, transparent 14px, transparent 35px);
-  /* Fixed 280px, not 100% — the boxes are 280px, but a percentage here is
-     computed against the padding-box (border excluded), which with a 1px
-     border and border-box sizing is 278px, not 280. That 2px shrink broke
-     the "divides evenly by 35" math above, throwing the two lines'
-     phases out of sync with each other and the pattern visibly asymmetric.
-     A fixed size keeps the repeat cycle itself always exactly 35px. */
-  background-size: 1px 280px, 280px 1px;
-  background-position: 50% -7px, -7px 50%;
-  background-repeat: no-repeat, no-repeat;
+  /* An SVG data URI instead of a repeating-linear-gradient — three attempts
+     at phase-shifting a repeating gradient by hand (cycle divisibility,
+     border-box vs percentage sizing, a half-dash offset) kept landing on
+     "meets at center" without actually being symmetric, and each fix was
+     unverifiable without eyes on a real render. This sidesteps the whole
+     class of bug: each of the four line segments below is drawn starting
+     from the exact same point (140, 140) — the box's own center — so a
+     dash beginning right at that shared start point is a trivial geometric
+     fact for every ray, not something arithmetic could get subtly wrong.
+     background-position: center still keeps it correctly centered even if
+     the box's actual rendered size drifts a px or two from 280 (border-box
+     sizing, flex-shrink, etc.) — any overflow gets cropped equally from
+     all four sides rather than throwing the phase off. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280'%3E%3Cg stroke='%23d4d4d8' stroke-width='1' stroke-dasharray='14 21'%3E%3Cline x1='140' y1='140' x2='140' y2='0'/%3E%3Cline x1='140' y1='140' x2='140' y2='280'/%3E%3Cline x1='140' y1='140' x2='0' y2='140'/%3E%3Cline x1='140' y1='140' x2='280' y2='140'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 280px 280px;
+  background-position: center;
+  background-repeat: no-repeat;
   opacity: 0;
   transition: opacity 250ms ease;
 }
