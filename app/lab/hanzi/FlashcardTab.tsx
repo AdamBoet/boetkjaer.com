@@ -1444,7 +1444,7 @@ function ReviewSession({
               {GRADES.map(({ key, label }) => {
                 return (
                   <div key={key} className="flex flex-col items-center gap-1.5">
-                    <span className="text-xs text-zinc-600 dark:text-zinc-300">{previewLabel(current, key)}</span>
+                    <span className="text-xs font-medium text-zinc-900 dark:text-zinc-100">{previewLabel(current, key)}</span>
                     <button
                       onClick={(e) => { e.currentTarget.blur(); grade.current(key); }}
                       className="w-full rounded-full border border-zinc-300 dark:border-zinc-600 py-2 text-sm text-zinc-800 dark:text-zinc-100 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
