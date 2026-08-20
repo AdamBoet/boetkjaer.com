@@ -873,7 +873,7 @@ export default function BrowseTab({
 
   function dueLabel(row: Row) {
     if (row.status === "new") return "—";
-    if (row.status === "learning" || row.status === "relearning") return "soon";
+    if (row.status === "learning" || row.status === "relearning") return ">10 min";
     if (row.dueDiff == null) return "—";
     if (row.dueDiff <= 0) return row.dueDiff === 0 ? "today" : `${-row.dueDiff}d overdue`;
     return `in ${row.dueDiff}d`;
