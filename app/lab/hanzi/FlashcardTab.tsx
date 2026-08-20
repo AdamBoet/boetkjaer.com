@@ -1489,7 +1489,7 @@ function ReviewSession({
                   </div>
                 )}
                 {current.sentence && (
-                  <div className="pt-4 mt-2 border-t border-zinc-200 dark:border-zinc-800 space-y-1">
+                  <div className="space-y-1">
                     <p className="text-2xl text-zinc-700 dark:text-zinc-300 flex items-center justify-center gap-2">
                       <span>{current.sentence}</span>
                       <AudioButton src={current.sentenceAudioUrl} label="Play sentence audio" />
