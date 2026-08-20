@@ -1402,6 +1402,17 @@ function ReviewSession({
       <div className="w-full flex-1 min-h-0 flex flex-col">
         <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center text-center px-4 py-4">
           <div className="max-w-xl m-auto">
+            {current.category && (
+              <p
+                className={`mb-2 text-xs font-semibold ${
+                  current.category === "saying"
+                    ? "text-emerald-700 dark:text-emerald-500"
+                    : "text-red-700 dark:text-red-500"
+                }`}
+              >
+                {current.category === "saying" ? "谚语" : "成语"}
+              </p>
+            )}
             {!revealed && current.isNew && (
               <p className="mb-2 text-xs font-semibold tracking-widest text-emerald-500 dark:text-emerald-400 [text-shadow:0_0_10px_rgba(16,185,129,0.85)]">
                 NEW
@@ -1414,18 +1425,6 @@ function ReviewSession({
                   : current.back
                 : current.front}
             </p>
-
-            {current.category && (
-              <p
-                className={`mt-1 text-xs font-semibold ${
-                  current.category === "saying"
-                    ? "text-emerald-700 dark:text-emerald-500"
-                    : "text-red-700 dark:text-red-500"
-                }`}
-              >
-                {current.category === "saying" ? "谚语 · Saying" : "成语 · Idiom"}
-              </p>
-            )}
 
             {!revealed && current.sentence && current.source !== "hanzi" && (
               <div className="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-800 text-center">
@@ -1469,7 +1468,7 @@ function ReviewSession({
                 {current.source !== "hanzi" && (current.sub || current.back) && (
                   <div className="space-y-1">
                     {current.sub && (
-                      <p className="text-2xl flex items-center justify-center gap-2">
+                      <p className="text-xl flex items-center justify-center gap-2">
                         <span className={idiomRed ? "text-[#8b0000] dark:text-[#e5484d]" : "text-emerald-700 dark:text-emerald-500"}>
                           {current.sub}
                         </span>
@@ -1490,17 +1489,17 @@ function ReviewSession({
                   </div>
                 )}
                 {current.sentence && (
-                  <div className="pt-4 mt-2 border-t border-zinc-200 dark:border-zinc-800 space-y-0.5">
-                    <p className="text-sm text-zinc-700 dark:text-zinc-300 flex items-center justify-center gap-2">
+                  <div className="pt-4 mt-2 border-t border-zinc-200 dark:border-zinc-800 space-y-1">
+                    <p className="text-2xl text-zinc-700 dark:text-zinc-300 flex items-center justify-center gap-2">
                       <span>{current.sentence}</span>
                       <AudioButton src={current.sentenceAudioUrl} label="Play sentence audio" />
                     </p>
                     {current.sentencePinyin && (
-                      <p className={`text-sm ${idiomRed ? "text-[#8b0000] dark:text-[#e5484d]" : "text-emerald-700 dark:text-emerald-500"}`}>
+                      <p className={`text-xl ${idiomRed ? "text-[#8b0000] dark:text-[#e5484d]" : "text-emerald-700 dark:text-emerald-500"}`}>
                         {current.sentencePinyin}
                       </p>
                     )}
-                    {current.sentenceMeaning && <p className="text-sm text-zinc-600 dark:text-zinc-400">{current.sentenceMeaning}</p>}
+                    {current.sentenceMeaning && <p className="text-2xl text-zinc-600 dark:text-zinc-400">{current.sentenceMeaning}</p>}
                   </div>
                 )}
                 {current.pictureUrl && (
