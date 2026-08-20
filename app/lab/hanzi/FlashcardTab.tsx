@@ -1379,7 +1379,7 @@ function ReviewSession({
               </div>
             )}
 
-            {current.components && (
+            {(revealed || current.isNew) && current.components && (
               <p className="mt-1.5 text-sm text-zinc-400 dark:text-zinc-500 text-center">{current.components}</p>
             )}
 
