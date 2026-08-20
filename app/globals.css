@@ -61,8 +61,13 @@
      background-position: center still keeps it correctly centered even if
      the box's actual rendered size drifts a px or two from 280 (border-box
      sizing, flex-shrink, etc.) — any overflow gets cropped equally from
-     all four sides rather than throwing the phase off. */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280'%3E%3Cg stroke='%23d4d4d8' stroke-width='1' stroke-dasharray='14 21'%3E%3Cline x1='140' y1='140' x2='140' y2='0'/%3E%3Cline x1='140' y1='140' x2='140' y2='280'/%3E%3Cline x1='140' y1='140' x2='0' y2='140'/%3E%3Cline x1='140' y1='140' x2='280' y2='140'/%3E%3C/g%3E%3C/svg%3E");
+     all four sides rather than throwing the phase off.
+     stroke-dashoffset shifts each ray's pattern to start partway into a
+     *gap* rather than a dash — otherwise all four rays' first dash lands
+     right at the shared center point and overlaps into one oversized
+     plus-shape, clearly longer than the regular dashes further out. A
+     small dedicated <circle> marks the actual center instead. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='280'%3E%3Cg stroke='%23d4d4d8' stroke-width='1' stroke-dasharray='14 21' stroke-dashoffset='-20'%3E%3Cline x1='140' y1='140' x2='140' y2='0'/%3E%3Cline x1='140' y1='140' x2='140' y2='280'/%3E%3Cline x1='140' y1='140' x2='0' y2='140'/%3E%3Cline x1='140' y1='140' x2='280' y2='140'/%3E%3C/g%3E%3Ccircle cx='140' cy='140' r='1.5' fill='%23d4d4d8'/%3E%3C/svg%3E");
   background-size: 280px 280px;
   background-position: center;
   background-repeat: no-repeat;
