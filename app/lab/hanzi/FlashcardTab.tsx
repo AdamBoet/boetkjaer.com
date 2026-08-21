@@ -640,6 +640,11 @@ function DeckMenu({
                   localStorage.setItem(maxReviewsKey(d.key), String(maxReviews));
                   localStorage.setItem(newCardsKey(d.key), String(newCards));
                   forceRerender((n) => n + 1);
+                  fetch("/api/hanzi-settings", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ deck: d.key, newCards, maxReviews }),
+                  }).catch(() => {});
                 }}
               />
             )}
@@ -1694,6 +1699,25 @@ export default function FlashcardTab({
   const [selectedDeck, setSelectedDeck] = useState<DeckKey | null>(null);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  // Session-limit settings (new cards/day, max reviews/session) live in
+  // Supabase, not just localStorage — otherwise phone and desktop each keep
+  // their own independent value. Pull the server's copy into localStorage
+  // once on load (last write wins), then bump settingsSynced so the deck
+  // counts below recompute against the now-current values.
+  const [settingsSynced, setSettingsSynced] = useState(0);
+  useEffect(() => {
+    fetch("/api/hanzi-settings")
+      .then((r) => r.json())
+      .then((byDeck: Record<string, { new_cards: number | null; max_reviews: number | null }>) => {
+        for (const [deck, s] of Object.entries(byDeck)) {
+          if (s.new_cards != null) localStorage.setItem(newCardsKey(deck as DeckKey), String(s.new_cards));
+          if (s.max_reviews != null) localStorage.setItem(maxReviewsKey(deck as DeckKey), String(s.max_reviews));
+        }
+        setSettingsSynced((n) => n + 1);
+      })
+      .catch(() => {});
+  }, []);
   useEffect(() => {
     onReviewingChange?.(selectedDeck !== null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1794,7 +1818,7 @@ export default function FlashcardTab({
       countDeck("random_words", randomWords, mounted, newToday.random_words),
       countDeck("idioms", idioms, mounted, newToday.idioms),
     ],
-    [cards, hsk3Known, randomWords, idioms, mounted, newToday]
+    [cards, hsk3Known, randomWords, idioms, mounted, newToday, settingsSynced]
   );
 
   const { queue } = useMemo(() => {
@@ -1809,7 +1833,7 @@ export default function FlashcardTab({
         : idioms.map((card) => ({ key: "idioms" as const, card }));
     const newCardsLimit = Math.max(0, loadNewCards(selectedDeck) - newToday[selectedDeck]);
     return buildQueue(items, loadMaxReviews(selectedDeck), newCardsLimit);
-  }, [selectedDeck, cards, hsk3Known, randomWords, idioms, newToday]);
+  }, [selectedDeck, cards, hsk3Known, randomWords, idioms, newToday, settingsSynced]);
 
   if (!selectedDeck) {
     return (
