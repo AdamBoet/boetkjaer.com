@@ -1791,6 +1791,14 @@ export default function FlashcardTab({
   // today's review_type-0 rows by (source, db_id) gives an accurate count
   // without needing a dedicated "was this a new card" column.
   const [newToday, setNewToday] = useState<Record<DeckKey, number>>({ hanzi: 0, hsk3: 0, random_words: 0, idioms: 0 });
+  // True only once the *real* (server-verified) count has resolved for the
+  // current deck-menu visit — false while a fresh fetch is in flight, so a
+  // review session started right then can't build its new-card allowance
+  // off the stale cached count and quietly bake in extra new cards. Reset
+  // to false the moment we're back at the deck menu (about to re-fetch),
+  // not just once ever, so a fast exit-then-reenter can't race a
+  // still-in-flight refetch either.
+  const [newTodayFetched, setNewTodayFetched] = useState(false);
   // The fetch below needs a network round trip, so on every page load the
   // deck menu would briefly show 0 for "introduced today" (understating the
   // remaining New count) before flipping to the real value a moment later —
@@ -1819,6 +1827,7 @@ export default function FlashcardTab({
     // to null re-runs this) — otherwise the count you just earned wouldn't
     // show up until the whole tab remounted.
     if (selectedDeck !== null) return;
+    setNewTodayFetched(false);
     // Scoped to today's local midnight onward — a revlog with months of
     // history has no reason to be paged through in full just to answer a
     // same-day question.
@@ -1850,9 +1859,10 @@ export default function FlashcardTab({
           idioms: seenByDeck.idioms.size,
         };
         setNewToday(counts);
+        setNewTodayFetched(true);
         localStorage.setItem(NEW_TODAY_CACHE_KEY, JSON.stringify({ date: todayKey, counts }));
       })
-      .catch(() => {});
+      .catch(() => setNewTodayFetched(true));
   }, [selectedDeck]);
 
   const hsk3Known = useMemo(
@@ -1885,9 +1895,11 @@ export default function FlashcardTab({
         : selectedDeck === "random_words"
         ? randomWords.map((card) => ({ key: "random_words" as const, card }))
         : idioms.map((card) => ({ key: "idioms" as const, card }));
-    const newCardsLimit = Math.max(0, loadNewCards(selectedDeck) - newToday[selectedDeck]);
+    // Zero (not the cached/stale count) while a fresh fetch of today's
+    // real total is in flight — see newTodayFetched above.
+    const newCardsLimit = newTodayFetched ? Math.max(0, loadNewCards(selectedDeck) - newToday[selectedDeck]) : 0;
     return buildQueue(items, loadMaxReviews(selectedDeck), newCardsLimit);
-  }, [selectedDeck, cards, hsk3Known, randomWords, idioms, newToday, settingsSynced]);
+  }, [selectedDeck, cards, hsk3Known, randomWords, idioms, newToday, newTodayFetched, settingsSynced]);
 
   if (!selectedDeck) {
     return (
