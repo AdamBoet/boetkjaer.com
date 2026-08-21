@@ -8,14 +8,12 @@ import { useGridPref } from "./GridPrefContext";
 const TRACKPAD_MODE_KEY = "hanziTrackpadMode";
 const CANVAS_SIZE = 280;
 
-// Tian zi ge guide cross — a plain white background (these boxes are always
-// white regardless of site theme) plus the `.hanzi-grid-layer` class from
-// globals.css, which renders the dashed cross as a ::before pseudo-element
-// so its opacity can fade in/out on toggle (a plain `background-image`
-// can't animate between a gradient and none). Generated content still
-// paints behind the element's real children — same guarantee a
-// background-image had — so it stays behind whatever HanziWriter draws.
-export const PLAIN_BACKGROUND_STYLE: React.CSSProperties = { backgroundColor: "#ffffff" };
+// Writing-box background/ink — themed with plain Tailwind classes (not an
+// inline style) so it responds to the site's dark-mode class automatically,
+// no per-component theme detection needed. The `text-*` half sets `color`,
+// which HanziWriter's strokeColor/outlineColor pick up via "currentColor"
+// wherever those are passed, so drawn ink stays legible in both themes.
+export const PLAIN_BACKGROUND_CLASS = "bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300";
 export function gridBoxClassName(showGrid: boolean): string {
   return `hanzi-grid-layer${showGrid ? " hanzi-grid-visible" : ""}`;
 }
@@ -621,6 +619,7 @@ export default function HanziWritingBox({
           ? traceOutline || (showReference && helpSettingsRef.current.showOutline)
           : traceOutline,
         showCharacter: false,
+        outlineColor: "currentColor",
         // Distinct from the reference box's gray so it's unmistakably the
         // user's own ink, never the hidden "official" stroke layer. Left
         // out entirely (not just `undefined`) on mobile so hanzi-writer's
@@ -651,6 +650,8 @@ export default function HanziWritingBox({
         padding: 12,
         showOutline: helpSettingsRef.current.showOutline,
         showCharacter: false,
+        strokeColor: "currentColor",
+        outlineColor: "currentColor",
       });
       referenceWriterRef.current.hideCharacter({ duration: 0 })?.then(() => {
         resetReferenceStrokes(referenceWriterRef.current);
@@ -698,7 +699,7 @@ export default function HanziWritingBox({
             <div className="space-y-1.5">
               <div
                 ref={wrapperRef}
-                className={`relative overflow-hidden touch-none rounded-xl border shrink-0 transition-shadow duration-300 ${gridBoxClassName(showGrid)} ${
+                className={`relative overflow-hidden touch-none rounded-xl border shrink-0 transition-shadow duration-300 ${gridBoxClassName(showGrid)} ${PLAIN_BACKGROUND_CLASS} ${
                   doneFlash
                     ? "border-emerald-400 ring-4 ring-emerald-500/60 shadow-[0_0_25px_6px_rgba(16,185,129,0.55)]"
                     : mistakeFlash
@@ -707,7 +708,7 @@ export default function HanziWritingBox({
                     ? "cursor-none border-blue-400 ring-4 ring-blue-500/60 shadow-[0_0_25px_6px_rgba(59,130,246,0.55)]"
                     : "border-zinc-200 dark:border-zinc-800"
                 }`}
-                style={{ width: 280, height: 280, ...PLAIN_BACKGROUND_STYLE }}
+                style={{ width: 280, height: 280 }}
               >
                 <div ref={targetRef} className="absolute inset-0" style={{ width: 280, height: 280 }} />
               </div>
@@ -716,8 +717,8 @@ export default function HanziWritingBox({
             {showReference && (
               <div className="hidden md:block space-y-1.5">
                 <div
-                  className={`relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 shrink-0 ${gridBoxClassName(showGrid)}`}
-                  style={{ width: 280, height: 280, ...PLAIN_BACKGROUND_STYLE }}
+                  className={`relative overflow-hidden rounded-xl border border-zinc-200 dark:border-zinc-800 shrink-0 ${gridBoxClassName(showGrid)} ${PLAIN_BACKGROUND_CLASS}`}
+                  style={{ width: 280, height: 280 }}
                 >
                   <div ref={referenceTargetRef} className="absolute inset-0" style={{ width: 280, height: 280 }} />
                 </div>
