@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback } from "react";
 import SunCalc from "suncalc";
 
 const DEFAULT_COORDS = { lat: 55.68, lng: 12.57 }; // Copenhagen fallback
+const LOCATION_CACHE_KEY = "themeLocation";
 
 function getAutoTheme(lat: number, lng: number): "light" | "dark" {
   const now = new Date();
@@ -25,16 +26,33 @@ export default function ThemeToggle() {
 
   useEffect(() => {
     setMounted(true);
+
+    // Only ever ask the browser for location once — cache whatever we get
+    // (real coords or the fallback) so every later page load reuses it
+    // instead of re-prompting for permission each time.
+    const cached = localStorage.getItem(LOCATION_CACHE_KEY);
+    if (cached) {
+      const c = JSON.parse(cached);
+      setCoords(c);
+      if (isAuto) applyAuto(c.lat, c.lng);
+      return;
+    }
+
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const c = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          localStorage.setItem(LOCATION_CACHE_KEY, JSON.stringify(c));
           setCoords(c);
           if (isAuto) applyAuto(c.lat, c.lng);
         },
-        () => { if (isAuto) applyAuto(DEFAULT_COORDS.lat, DEFAULT_COORDS.lng); }
+        () => {
+          localStorage.setItem(LOCATION_CACHE_KEY, JSON.stringify(DEFAULT_COORDS));
+          if (isAuto) applyAuto(DEFAULT_COORDS.lat, DEFAULT_COORDS.lng);
+        }
       );
     } else {
+      localStorage.setItem(LOCATION_CACHE_KEY, JSON.stringify(DEFAULT_COORDS));
       applyAuto(DEFAULT_COORDS.lat, DEFAULT_COORDS.lng);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
