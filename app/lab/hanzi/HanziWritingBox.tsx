@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useTheme } from "next-themes";
 import HanziWriter from "hanzi-writer";
 import { useTrackpadModeContext, TRACKPAD_CHANGED_EVENT } from "./TrackpadModeContext";
 import { useGridPref } from "./GridPrefContext";
@@ -16,6 +15,18 @@ import { useGridPref } from "./GridPrefContext";
 // between the front and back of a card.
 export const DARK_STROKE_COLOR = "#a1a1aa";
 export const DARK_OUTLINE_COLOR = "#a1a1aa";
+
+// Read the theme straight off the DOM (next-themes applies the `dark` class
+// synchronously before first paint, specifically to avoid a flash of the
+// wrong theme) instead of `useTheme()`'s `resolvedTheme`, which resolves
+// asynchronously on first render. Since HanziWriter is only ever created
+// once per box (never recreated on later re-renders), a box that mounted
+// before `resolvedTheme` settled would otherwise get stuck with
+// hanzi-writer's own light-mode default colors forever — which is exactly
+// why the front and back boxes could end up two different shades of gray.
+export function isDarkMode(): boolean {
+  return typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+}
 
 const TRACKPAD_MODE_KEY = "hanziTrackpadMode";
 const CANVAS_SIZE = 280;
@@ -237,8 +248,6 @@ export default function HanziWritingBox({
   const [mistakeFlash, setMistakeFlash] = useState(false);
   const mistakeFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loadError, setLoadError] = useState(false);
-  const { resolvedTheme } = useTheme();
-  const isDark = resolvedTheme === "dark";
   const [trackpadMode, setTrackpadMode] = useState(false);
   const [locked, setLocked] = useState(false);
   const trackpadModeRef = useRef(trackpadMode);
@@ -633,7 +642,7 @@ export default function HanziWritingBox({
           ? traceOutline || (showReference && helpSettingsRef.current.showOutline)
           : traceOutline,
         showCharacter: false,
-        ...(isDark ? { outlineColor: DARK_OUTLINE_COLOR } : {}),
+        ...(isDarkMode() ? { outlineColor: DARK_OUTLINE_COLOR } : {}),
         // Distinct from the reference box's gray so it's unmistakably the
         // user's own ink, never the hidden "official" stroke layer. Left
         // out entirely (not just `undefined`) on mobile so hanzi-writer's
@@ -664,7 +673,7 @@ export default function HanziWritingBox({
         padding: 12,
         showOutline: helpSettingsRef.current.showOutline,
         showCharacter: false,
-        ...(isDark ? { strokeColor: DARK_STROKE_COLOR, outlineColor: DARK_OUTLINE_COLOR } : {}),
+        ...(isDarkMode() ? { strokeColor: DARK_STROKE_COLOR, outlineColor: DARK_OUTLINE_COLOR } : {}),
       });
       referenceWriterRef.current.hideCharacter({ duration: 0 })?.then(() => {
         resetReferenceStrokes(referenceWriterRef.current);
