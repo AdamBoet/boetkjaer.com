@@ -1,19 +1,27 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useTheme } from "next-themes";
 import HanziWriter from "hanzi-writer";
 import { useTrackpadModeContext, TRACKPAD_CHANGED_EVENT } from "./TrackpadModeContext";
 import { useGridPref } from "./GridPrefContext";
 
+// hanzi-writer runs colors through its own color-math (for animations etc.)
+// and can't parse the CSS "currentColor" keyword — passing it as a color
+// option silently breaks writer creation entirely (no drawing, no hint).
+// Real hex values, picked from the resolved theme, instead.
+export const DARK_STROKE_COLOR = "#d4d4d8";
+export const DARK_OUTLINE_COLOR = "#52525b";
+
 const TRACKPAD_MODE_KEY = "hanziTrackpadMode";
 const CANVAS_SIZE = 280;
 
-// Writing-box background/ink — themed with plain Tailwind classes (not an
-// inline style) so it responds to the site's dark-mode class automatically,
-// no per-component theme detection needed. The `text-*` half sets `color`,
-// which HanziWriter's strokeColor/outlineColor pick up via "currentColor"
-// wherever those are passed, so drawn ink stays legible in both themes.
-export const PLAIN_BACKGROUND_CLASS = "bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300";
+// Writing-box background — themed with plain Tailwind classes (not an inline
+// style) so it responds to the site's dark-mode class automatically. The
+// stroke/outline ink itself is a separate concern (see DARK_STROKE_COLOR /
+// DARK_OUTLINE_COLOR above) since HanziWriter needs real hex colors, not
+// CSS's "currentColor".
+export const PLAIN_BACKGROUND_CLASS = "bg-white dark:bg-zinc-800";
 export function gridBoxClassName(showGrid: boolean): string {
   return `hanzi-grid-layer${showGrid ? " hanzi-grid-visible" : ""}`;
 }
@@ -225,6 +233,8 @@ export default function HanziWritingBox({
   const [mistakeFlash, setMistakeFlash] = useState(false);
   const mistakeFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
   const [trackpadMode, setTrackpadMode] = useState(false);
   const [locked, setLocked] = useState(false);
   const trackpadModeRef = useRef(trackpadMode);
@@ -619,7 +629,7 @@ export default function HanziWritingBox({
           ? traceOutline || (showReference && helpSettingsRef.current.showOutline)
           : traceOutline,
         showCharacter: false,
-        outlineColor: "currentColor",
+        ...(isDark ? { outlineColor: DARK_OUTLINE_COLOR } : {}),
         // Distinct from the reference box's gray so it's unmistakably the
         // user's own ink, never the hidden "official" stroke layer. Left
         // out entirely (not just `undefined`) on mobile so hanzi-writer's
@@ -650,8 +660,7 @@ export default function HanziWritingBox({
         padding: 12,
         showOutline: helpSettingsRef.current.showOutline,
         showCharacter: false,
-        strokeColor: "currentColor",
-        outlineColor: "currentColor",
+        ...(isDark ? { strokeColor: DARK_STROKE_COLOR, outlineColor: DARK_OUTLINE_COLOR } : {}),
       });
       referenceWriterRef.current.hideCharacter({ duration: 0 })?.then(() => {
         resetReferenceStrokes(referenceWriterRef.current);

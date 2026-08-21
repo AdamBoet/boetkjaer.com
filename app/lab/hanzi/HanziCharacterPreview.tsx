@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useTheme } from "next-themes";
 import HanziWriter from "hanzi-writer";
-import { gridBoxClassName, PLAIN_BACKGROUND_CLASS } from "./HanziWritingBox";
+import { gridBoxClassName, PLAIN_BACKGROUND_CLASS, DARK_STROKE_COLOR } from "./HanziWritingBox";
 import { useGridPref } from "./GridPrefContext";
 
 // A static, already-filled-in rendering of a character — no quiz, no
@@ -12,6 +13,8 @@ export default function HanziCharacterPreview({ character }: { character: string
   const targetRef = useRef<HTMLDivElement>(null);
   const writerRef = useRef<HanziWriter | null>(null);
   const { showGrid } = useGridPref();
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
 
   useEffect(() => {
     if (!targetRef.current || !character) return;
@@ -22,7 +25,7 @@ export default function HanziCharacterPreview({ character }: { character: string
         padding: 12,
         showCharacter: true,
         showOutline: false,
-        strokeColor: "currentColor",
+        ...(isDark ? { strokeColor: DARK_STROKE_COLOR } : {}),
       });
     } else {
       writerRef.current.setCharacter(character);
