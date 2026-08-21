@@ -1418,12 +1418,14 @@ function ReviewSession({
         <div
           className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center text-center px-4 py-4"
           onClick={() => {
-            // Mobile-only "tap anywhere to flip" affordance — skipped for
-            // hanzi cards, where a tap on the writing box has to draw a
-            // stroke instead of flipping the card.
-            if (revealed || current.source === "hanzi") return;
+            // Mobile-only "tap anywhere" affordance — flips the card, then
+            // (mirroring the desktop Space-bar behavior) grades it Good on
+            // a second tap. Skipped for hanzi cards, where a tap on the
+            // writing box has to draw a stroke instead.
+            if (current.source === "hanzi") return;
             if (typeof window !== "undefined" && window.innerWidth >= 768) return;
-            setRevealed(true);
+            if (revealed) grade.current("good");
+            else setRevealed(true);
           }}
         >
           <div className="w-full max-w-3xl m-auto">
@@ -1449,7 +1451,7 @@ function ReviewSession({
             {revealed && current.source === "idioms" && current.sub ? (
               <div
                 className="group inline-grid grid-cols-[3.25rem_auto_3.25rem] items-center gap-1.5 cursor-pointer"
-                onClick={() => setPinyinPeeked((p) => !p)}
+                onClick={(e) => { e.stopPropagation(); setPinyinPeeked((p) => !p); }}
               >
                 <span />
                 <p className="text-2xl">{current.front}</p>
@@ -1550,7 +1552,7 @@ function ReviewSession({
                     {current.source !== "hanzi" && current.sentencePinyin ? (
                       <div
                         className="group inline-grid grid-cols-[3.25rem_auto_3.25rem] items-center gap-1.5 cursor-pointer"
-                        onClick={() => setSentencePinyinPeeked((p) => !p)}
+                        onClick={(e) => { e.stopPropagation(); setSentencePinyinPeeked((p) => !p); }}
                       >
                         <span />
                         <p className="text-2xl">{current.sentence}</p>
