@@ -10,8 +10,12 @@ import { useGridPref } from "./GridPrefContext";
 // and can't parse the CSS "currentColor" keyword — passing it as a color
 // option silently breaks writer creation entirely (no drawing, no hint).
 // Real hex values, picked from the resolved theme, instead.
-export const DARK_STROKE_COLOR = "#d4d4d8";
-export const DARK_OUTLINE_COLOR = "#52525b";
+// One shared color for both the filled-in preview's strokes and the
+// interactive box's trace outline — previously two different grays (a light
+// one for strokes, a much darker one for the outline) that didn't match
+// between the front and back of a card.
+export const DARK_STROKE_COLOR = "#a1a1aa";
+export const DARK_OUTLINE_COLOR = "#a1a1aa";
 
 const TRACKPAD_MODE_KEY = "hanziTrackpadMode";
 const CANVAS_SIZE = 280;
