@@ -642,7 +642,13 @@ export default function HanziWritingBox({
           ? traceOutline || (showReference && helpSettingsRef.current.showOutline)
           : traceOutline,
         showCharacter: false,
-        ...(isDarkMode() ? { outlineColor: DARK_OUTLINE_COLOR } : {}),
+        // The outline guide is a thin stroked skeleton line (hanzi-writer's
+        // own `outlineWidth`, default 2px) while the filled-in preview on
+        // the back is a solid brush-shaped glyph — same fill color, but the
+        // thin line reads visibly lighter from sheer lack of ink coverage.
+        // Bulking up the outline width (dark mode only, where this was
+        // reported) closes most of that gap.
+        ...(isDarkMode() ? { outlineColor: DARK_OUTLINE_COLOR, outlineWidth: 6 } : {}),
         // Distinct from the reference box's gray so it's unmistakably the
         // user's own ink, never the hidden "official" stroke layer. Left
         // out entirely (not just `undefined`) on mobile so hanzi-writer's

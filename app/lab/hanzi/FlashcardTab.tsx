@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useEffect } from "react";
+import { useMemo, useRef, useState, useEffect, useLayoutEffect } from "react";
 import { type HanziCard } from "./CharacterGrid";
 import { cardDueDiff } from "./card-utils";
 import { type Hsk3Coverage, type Hsk3Word, LEVELS } from "./Hsk3Grid";
@@ -401,22 +401,32 @@ function interleave<T>(due: T[], newOnes: T[]): T[] {
 // hanzi; new: same) — capped at `maxReviews`/`newCardsLimit`, then
 // interleaved. No randomization, so re-entering the same deck without
 // grading anything gives the same session back.
+// Learning/relearning cards use a real epoch-seconds `due` timestamp
+// (matching Anki's own convention for these queues), not a day count.
+function isLearningCardDue(due: number | null | undefined) {
+  return due != null && due <= Math.floor(Date.now() / 1000);
+}
+
 function buildQueue(
   items: { key: DeckKey; card: AnyCard }[],
   maxReviews: number,
   newCardsLimit: number
-): { queue: DueCard[] } {
+): { queue: DueCard[]; pending: { card: DueCard; dueAt: number }[] } {
   const due: DueCard[] = [];
   const newOnes: DueCard[] = [];
   const learning: DueCard[] = [];
+  const pending: { card: DueCard; dueAt: number }[] = [];
   for (const { key, card } of items) {
     if (!isNeverStudied(card.reps) && isLearning(card.type)) {
-      // A learning/relearning card's step interval (5m, 10m, 1d, ...) is
-      // purely an ordering signal, not a real-time gate — it always queues
-      // immediately, just sorted (below) so a shorter step shows before a
-      // longer one, rather than the session blocking until the wall-clock
-      // time actually elapses.
-      learning.push(toDueCard(key, card, 0, false));
+      // Learning/relearning card: only surfaces in the queue right now if
+      // its step has actually elapsed. One still cooling down goes into
+      // `pending` instead, where the timer effect (or the "nothing else
+      // left to review" fallback) picks it up.
+      if (isLearningCardDue(card.due)) {
+        learning.push(toDueCard(key, card, 0, false));
+      } else {
+        pending.push({ card: toDueCard(key, card, 0, false), dueAt: (card.due ?? 0) * 1000 });
+      }
       continue;
     }
     const diff = dueDiffFrom(card);
@@ -433,6 +443,7 @@ function buildQueue(
     // due card in the session had already been cleared, which in practice
     // was "never" for a big deck.
     queue: interleave([...learning, ...due].slice(0, maxReviews), newOnes.slice(0, newCardsLimit)),
+    pending,
   };
 }
 
@@ -1160,16 +1171,23 @@ export type CardStatPatch = {
 
 function ReviewSession({
   initialQueue,
+  initialPending,
   onExit,
   onJumpToCard,
   onCardUpdated,
 }: {
   initialQueue: DueCard[];
+  initialPending: { card: DueCard; dueAt: number }[];
   onExit: () => void;
   onJumpToCard?: (card: { source: DeckKey; dbId: number | string }) => void;
   onCardUpdated?: (source: DeckKey, dbId: number | string, patch: CardStatPatch) => void;
 }) {
   const [queue, setQueue] = useState(initialQueue);
+  // Learning/relearning cards that aren't due yet — resurfaced into `queue`
+  // by the timer effect below once their step's delay elapses, or all at
+  // once the moment the visible queue empties out with nothing else left
+  // to review (see the flush effect below).
+  const [pending, setPending] = useState(initialPending);
   const [revealed, setRevealed] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
@@ -1289,15 +1307,11 @@ function ReviewSession({
     lastActions.current = [...lastActions.current, { original: card, graded: updatedCard, reviewId }];
 
     if (result.dueInMin != null) {
-      // Still learning/relearning — goes straight back into the queue (no
-      // real-time cooldown), positioned just before the first other
-      // learning card whose own step is longer, so a 5m step shows before
-      // a 6m step, both immediately.
-      const idx = rest.findIndex(
-        (c) => isLearning(c.type) && c.due != null && updatedCard.due != null && c.due > updatedCard.due!
-      );
-      const insertAt = idx === -1 ? rest.length : idx;
-      setQueue([...rest.slice(0, insertAt), updatedCard, ...rest.slice(insertAt)]);
+      // Still learning/relearning — holds off the visible queue until its
+      // step's delay actually elapses (the timer effect below), instead of
+      // instantly cycling back like a graduated card would.
+      setPending((p) => [...p, { card: updatedCard, dueAt: Date.now() + result.dueInMin! * 60000 }]);
+      setQueue(rest);
     } else {
       setQueue(rest);
     }
@@ -1325,9 +1339,45 @@ function ReviewSession({
     onCardUpdated?.(action.original.source, action.original.dbId, patch);
     deleteReviewLog(action.original.source, action.original.dbId, action.reviewId);
     setQueue((q) => [action.original, ...q.filter((c) => c.id !== action.graded.id)]);
+    setPending((p) => p.filter((x) => x.card.id !== action.graded.id));
     lastActions.current = stack.slice(0, -1);
     setRevealed(false);
   };
+
+  // Polls for pending learning/relearning cards whose step delay has
+  // elapsed and splices them back into the live queue near the front —
+  // Anki interleaves them with other due cards rather than appending them
+  // at the very end.
+  useEffect(() => {
+    if (pending.length === 0) return;
+    const id = setInterval(() => {
+      const now = Date.now();
+      const ready = pending.filter((p) => p.dueAt <= now);
+      if (ready.length === 0) return;
+      setPending((p) => p.filter((x) => x.dueAt > now));
+      setQueue((q) => {
+        const next = [...q];
+        for (const { card } of ready) {
+          const pos = Math.min(next.length, Math.floor(Math.random() * 3) + 1);
+          next.splice(pos, 0, card);
+        }
+        return next;
+      });
+    }, 5000);
+    return () => clearInterval(id);
+  }, [pending]);
+
+  // The moment the visible queue runs dry with nothing but cooling-down
+  // learning cards left (no due/new cards remaining), don't make the user
+  // wait out their real timers — just cycle through all of them now,
+  // soonest-due first. useLayoutEffect (not useEffect) so this resolves
+  // before paint — otherwise "All done!" would flash for a frame first.
+  useLayoutEffect(() => {
+    if (queue.length > 0 || pending.length === 0) return;
+    const sorted = [...pending].sort((a, b) => a.dueAt - b.dueAt);
+    setQueue(sorted.map((p) => p.card));
+    setPending([]);
+  }, [queue.length, pending]);
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -1383,8 +1433,12 @@ function ReviewSession({
   }
 
   const remainingNew = queue.filter((c) => c.isNew).length;
-  const remainingLearning = queue.filter((c) => !c.isNew && isLearning(c.type)).length;
-  const remainingDue = queue.length - remainingNew - remainingLearning;
+  const remainingLearningInQueue = queue.filter((c) => !c.isNew && isLearning(c.type)).length;
+  // Total learning-card count, not just the ones currently past their
+  // cooldown — the still-cooling-down ones in `pending` will surface later
+  // in this same session regardless, so they still count toward the total.
+  const remainingLearning = remainingLearningInQueue + pending.length;
+  const remainingDue = queue.length - remainingNew - remainingLearningInQueue;
 
   return (
     <div className="fixed inset-0 z-30 flex flex-col overflow-hidden bg-zinc-100 dark:bg-zinc-950 px-4 sm:px-8 pt-4 sm:pt-8">
@@ -1821,8 +1875,8 @@ export default function FlashcardTab({
     [cards, hsk3Known, randomWords, idioms, mounted, newToday, settingsSynced]
   );
 
-  const { queue } = useMemo(() => {
-    if (!selectedDeck) return { queue: [] };
+  const { queue, pending } = useMemo(() => {
+    if (!selectedDeck) return { queue: [], pending: [] };
     const items =
       selectedDeck === "hanzi"
         ? cards.map((card) => ({ key: "hanzi" as const, card }))
@@ -1850,7 +1904,7 @@ export default function FlashcardTab({
     );
   }
 
-  if (queue.length === 0) {
+  if (queue.length === 0 && pending.length === 0) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4 max-w-xl mx-auto">
         <div className="w-full rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-10 text-center">
@@ -1869,6 +1923,7 @@ export default function FlashcardTab({
       <GridPrefProvider>
         <ReviewSession
           initialQueue={queue}
+          initialPending={pending}
           onExit={() => setSelectedDeck(null)}
           onJumpToCard={onJumpToCard}
           onCardUpdated={onCardUpdated}
