@@ -1524,7 +1524,7 @@ function ReviewSession({
             )}
 
             {(revealed || current.isNew) && current.components && (
-              <p className="mt-1.5 text-sm text-zinc-400 dark:text-zinc-500 text-center">{current.components}</p>
+              <p className="mt-1.5 text-sm text-zinc-500 dark:text-zinc-400 text-center">{current.components}</p>
             )}
 
             {revealed && (
@@ -1545,7 +1545,7 @@ function ReviewSession({
                   </div>
                 )}
                 {current.examples && (
-                  <p className="text-2xl whitespace-pre-line">{current.examples}</p>
+                  <p className="mt-6 text-2xl whitespace-pre-line">{current.examples}</p>
                 )}
                 {current.source === "hanzi" && current.audioUrl && (
                   <div className="flex justify-center">
