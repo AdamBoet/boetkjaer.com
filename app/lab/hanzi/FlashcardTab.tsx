@@ -1415,7 +1415,17 @@ function ReviewSession({
       </div>
 
       <div className="w-full flex-1 min-h-0 flex flex-col">
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center text-center px-4 py-4">
+        <div
+          className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center text-center px-4 py-4"
+          onClick={() => {
+            // Mobile-only "tap anywhere to flip" affordance — skipped for
+            // hanzi cards, where a tap on the writing box has to draw a
+            // stroke instead of flipping the card.
+            if (revealed || current.source === "hanzi") return;
+            if (typeof window !== "undefined" && window.innerWidth >= 768) return;
+            setRevealed(true);
+          }}
+        >
           <div className="w-full max-w-3xl m-auto">
             {current.category && (
               <span
