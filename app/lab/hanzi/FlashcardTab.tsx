@@ -1193,6 +1193,14 @@ function ReviewSession({
   const [editOpen, setEditOpen] = useState(false);
   const lastActions = useRef<{ original: DueCard; graded: DueCard; reviewId: number }[]>([]);
   const current = queue[0];
+  // Every card that started this session as new — captured once, up front,
+  // since `initialQueue` is the only point a card is ever new for. Grading
+  // flips `isNew` to false (which still correctly turns off the writing
+  // box's background-character reveal and the components line, unchanged),
+  // but the "NEW" badge itself should keep showing for the rest of the
+  // session even after the card's been graded once and cycles back around.
+  const newIdsThisSession = useRef(new Set(initialQueue.filter((c) => c.isNew).map((c) => c.id))).current;
+  const wasNewThisSession = current ? newIdsThisSession.has(current.id) : false;
   // 成语 (idiom) cards get their whole card tinted red, matching the color
   // Anki itself used for the "(成语)" tag on these — 谚语 (saying) cards
   // keep the deck's normal colors, so only idioms stand out this way.
@@ -1502,7 +1510,7 @@ function ReviewSession({
             {current.levelLabel && (
               <p className="-mt-16 mb-10 text-xs text-zinc-400 dark:text-zinc-600">{current.levelLabel}</p>
             )}
-            {!revealed && current.isNew && (
+            {wasNewThisSession && (
               <p className="mb-2 text-xs font-semibold tracking-widest text-emerald-500 dark:text-emerald-400 [text-shadow:0_0_10px_rgba(16,185,129,0.85)]">
                 NEW
               </p>
