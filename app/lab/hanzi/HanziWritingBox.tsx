@@ -50,6 +50,11 @@ const BASE_DISTANCE_THRESHOLD = 350;
 // settings already specify — not itself a user-facing setting.
 const TRACKPAD_LENIENCY_BOOST = 0.6;
 const TRACKPAD_DISTANCE_BOOST = 150;
+// A finger is a lot less precise than a mouse cursor — strokes placed
+// slightly to the side of where they "should" be were getting flagged as
+// mistakes on touch. Loosened the same way trackpad mode already is.
+const MOBILE_LENIENCY_BOOST = 0.6;
+const MOBILE_DISTANCE_BOOST = 150;
 
 interface TrackpadSettings {
   /** How far the virtual pen moves per unit of raw trackpad movement. */
@@ -581,10 +586,15 @@ export default function HanziWritingBox({
     // needed most, since trackpad-driven strokes are jerkier. Reading
     // localStorage directly matches the same source of truth synchronously.
     const isTrackpad = localStorage.getItem(TRACKPAD_MODE_KEY) === "1";
+    // Same reasoning as isTrackpad above: on a fresh mount, isMobileRef can
+    // still be the stale pre-effect default for this card's first (only)
+    // quiz setup, so read the media query directly instead.
+    const mobileBoost = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
     writer
       .quiz({
-        leniency: BASE_LENIENCY + (isTrackpad ? TRACKPAD_LENIENCY_BOOST : 0),
-        averageDistanceThreshold: BASE_DISTANCE_THRESHOLD + (isTrackpad ? TRACKPAD_DISTANCE_BOOST : 0),
+        leniency: BASE_LENIENCY + (isTrackpad ? TRACKPAD_LENIENCY_BOOST : 0) + (mobileBoost ? MOBILE_LENIENCY_BOOST : 0),
+        averageDistanceThreshold:
+          BASE_DISTANCE_THRESHOLD + (isTrackpad ? TRACKPAD_DISTANCE_BOOST : 0) + (mobileBoost ? MOBILE_DISTANCE_BOOST : 0),
         showHintAfterMisses: HINT_AFTER_MISSES,
         // Suppress hanzi-writer's own default full-character flash on
         // completion (in highlightColor, a blue-purple) — we show our own
