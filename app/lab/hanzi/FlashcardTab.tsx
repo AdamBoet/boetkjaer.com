@@ -1844,7 +1844,10 @@ export default function FlashcardTab({
     fetch(`/api/review-log?since=${encodeURIComponent(sinceMidnight.toISOString())}`)
       .then((r) => r.json())
       .then((d) => {
-        if (d.error || !Array.isArray(d.rows)) return;
+        if (d.error || !Array.isArray(d.rows)) {
+          setNewTodayFetched(true);
+          return;
+        }
         const todayKey = new Date().toDateString();
         const todays = (
           d.rows as { reviewed_at: string; time_taken_ms: number; source: DeckKey; db_id: string; review_type: number }[]
