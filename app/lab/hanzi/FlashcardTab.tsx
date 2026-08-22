@@ -1172,12 +1172,14 @@ export type CardStatPatch = {
 function ReviewSession({
   initialQueue,
   initialPending,
+  newTodayIds,
   onExit,
   onJumpToCard,
   onCardUpdated,
 }: {
   initialQueue: DueCard[];
   initialPending: { card: DueCard; dueAt: number }[];
+  newTodayIds: Set<string>;
   onExit: () => void;
   onJumpToCard?: (card: { source: DeckKey; dbId: number | string }) => void;
   onCardUpdated?: (source: DeckKey, dbId: number | string, patch: CardStatPatch) => void;
@@ -1193,13 +1195,16 @@ function ReviewSession({
   const [editOpen, setEditOpen] = useState(false);
   const lastActions = useRef<{ original: DueCard; graded: DueCard; reviewId: number }[]>([]);
   const current = queue[0];
-  // Every card that started this session as new — captured once, up front,
-  // since `initialQueue` is the only point a card is ever new for. Grading
-  // flips `isNew` to false (which still correctly turns off the writing
-  // box's background-character reveal and the components line, unchanged),
-  // but the "NEW" badge itself should keep showing for the rest of the
-  // session even after the card's been graded once and cycles back around.
-  const newIdsThisSession = useRef(new Set(initialQueue.filter((c) => c.isNew).map((c) => c.id))).current;
+  // Every card that started this session as new, plus every card the
+  // server says was introduced today in an earlier session — captured
+  // once, up front. Grading flips `isNew` to false (which still correctly
+  // turns off the writing box's background-character reveal and the
+  // components line, unchanged), but the "NEW" badge itself should keep
+  // showing for the rest of today, not just the one continuous session a
+  // card first appeared in — a reload/re-entry shouldn't lose it.
+  const newIdsThisSession = useRef(
+    new Set([...initialQueue.filter((c) => c.isNew).map((c) => c.id), ...newTodayIds])
+  ).current;
   const wasNewThisSession = current ? newIdsThisSession.has(current.id) : false;
   // 成语 (idiom) cards get their whole card tinted red, matching the color
   // Anki itself used for the "(成语)" tag on these — 谚语 (saying) cards
@@ -1807,6 +1812,11 @@ export default function FlashcardTab({
   // not just once ever, so a fast exit-then-reenter can't race a
   // still-in-flight refetch either.
   const [newTodayFetched, setNewTodayFetched] = useState(false);
+  // Full DueCard.id set of every card introduced as new today (not just
+  // this session) — the NEW badge should keep showing for a card even
+  // after a reload/re-entry later the same day, not just within the one
+  // continuous session it first appeared in.
+  const [newTodayIds, setNewTodayIds] = useState<Set<string>>(new Set());
   // The fetch below needs a network round trip, so on every page load the
   // deck menu would briefly show 0 for "introduced today" (understating the
   // remaining New count) before flipping to the real value a moment later —
@@ -1860,8 +1870,13 @@ export default function FlashcardTab({
         });
 
         const seenByDeck: Record<DeckKey, Set<string>> = { hanzi: new Set(), hsk3: new Set(), random_words: new Set(), idioms: new Set() };
+        const idPrefix: Record<DeckKey, string> = { hanzi: "hanzi", hsk3: "hsk3", random_words: "wp", idioms: "wp" };
+        const newIds = new Set<string>();
         for (const r of todays) {
-          if (r.review_type === 0 && seenByDeck[r.source]) seenByDeck[r.source].add(r.db_id);
+          if (r.review_type === 0 && seenByDeck[r.source]) {
+            seenByDeck[r.source].add(r.db_id);
+            newIds.add(`${idPrefix[r.source]}-${r.db_id}`);
+          }
         }
         const counts = {
           hanzi: seenByDeck.hanzi.size,
@@ -1870,6 +1885,7 @@ export default function FlashcardTab({
           idioms: seenByDeck.idioms.size,
         };
         setNewToday(counts);
+        setNewTodayIds(newIds);
         setNewTodayFetched(true);
         localStorage.setItem(NEW_TODAY_CACHE_KEY, JSON.stringify({ date: todayKey, counts }));
       })
@@ -1947,6 +1963,7 @@ export default function FlashcardTab({
         <ReviewSession
           initialQueue={queue}
           initialPending={pending}
+          newTodayIds={newTodayIds}
           onExit={() => setSelectedDeck(null)}
           onJumpToCard={onJumpToCard}
           onCardUpdated={onCardUpdated}
