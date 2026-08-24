@@ -55,6 +55,11 @@ const TRACKPAD_DISTANCE_BOOST = 150;
 // mistakes on touch. Loosened the same way trackpad mode already is.
 const MOBILE_LENIENCY_BOOST = 0.15;
 const MOBILE_DISTANCE_BOOST = 40;
+// A mouse is precise — hanzi-writer's own defaults (BASE_* above) are too
+// forgiving for plain desktop mouse input specifically (no trackpad, no
+// touch), so tighten below the default there instead of loosening.
+const DESKTOP_MOUSE_LENIENCY_ADJUST = -0.3;
+const DESKTOP_MOUSE_DISTANCE_ADJUST = -100;
 
 interface TrackpadSettings {
   /** How far the virtual pen moves per unit of raw trackpad movement. */
@@ -590,11 +595,21 @@ export default function HanziWritingBox({
     // still be the stale pre-effect default for this card's first (only)
     // quiz setup, so read the media query directly instead.
     const mobileBoost = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
+    // Plain desktop mouse (no trackpad, no touch) is the one input mode
+    // that's precise enough to tighten below hanzi-writer's own defaults.
+    const isDesktopMouse = !isTrackpad && !mobileBoost;
     writer
       .quiz({
-        leniency: BASE_LENIENCY + (isTrackpad ? TRACKPAD_LENIENCY_BOOST : 0) + (mobileBoost ? MOBILE_LENIENCY_BOOST : 0),
+        leniency:
+          BASE_LENIENCY +
+          (isTrackpad ? TRACKPAD_LENIENCY_BOOST : 0) +
+          (mobileBoost ? MOBILE_LENIENCY_BOOST : 0) +
+          (isDesktopMouse ? DESKTOP_MOUSE_LENIENCY_ADJUST : 0),
         averageDistanceThreshold:
-          BASE_DISTANCE_THRESHOLD + (isTrackpad ? TRACKPAD_DISTANCE_BOOST : 0) + (mobileBoost ? MOBILE_DISTANCE_BOOST : 0),
+          BASE_DISTANCE_THRESHOLD +
+          (isTrackpad ? TRACKPAD_DISTANCE_BOOST : 0) +
+          (mobileBoost ? MOBILE_DISTANCE_BOOST : 0) +
+          (isDesktopMouse ? DESKTOP_MOUSE_DISTANCE_ADJUST : 0),
         showHintAfterMisses: HINT_AFTER_MISSES,
         // Suppress hanzi-writer's own default full-character flash on
         // completion (in highlightColor, a blue-purple) — we show our own
