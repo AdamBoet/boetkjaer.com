@@ -53,8 +53,8 @@ const TRACKPAD_DISTANCE_BOOST = 150;
 // A finger is a lot less precise than a mouse cursor — strokes placed
 // slightly to the side of where they "should" be were getting flagged as
 // mistakes on touch. Loosened the same way trackpad mode already is.
-const MOBILE_LENIENCY_BOOST = 0.3;
-const MOBILE_DISTANCE_BOOST = 75;
+const MOBILE_LENIENCY_BOOST = 0.15;
+const MOBILE_DISTANCE_BOOST = 40;
 
 interface TrackpadSettings {
   /** How far the virtual pen moves per unit of raw trackpad movement. */
