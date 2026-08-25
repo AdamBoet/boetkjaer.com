@@ -55,6 +55,12 @@ const TRACKPAD_DISTANCE_BOOST = 150;
 // mistakes on touch. Loosened the same way trackpad mode already is.
 const MOBILE_LENIENCY_BOOST = 0.15;
 const MOBILE_DISTANCE_BOOST = 40;
+// A mouse is precise — hanzi-writer's own defaults (BASE_* above) are
+// slightly too forgiving for plain desktop mouse input specifically (no
+// trackpad, no touch). A prior, larger tightening (-0.3/-100) turned out
+// to be too strict — this is about half that.
+const DESKTOP_MOUSE_LENIENCY_ADJUST = -0.15;
+const DESKTOP_MOUSE_DISTANCE_ADJUST = -50;
 
 interface TrackpadSettings {
   /** How far the virtual pen moves per unit of raw trackpad movement. */
@@ -590,11 +596,19 @@ export default function HanziWritingBox({
     // still be the stale pre-effect default for this card's first (only)
     // quiz setup, so read the media query directly instead.
     const mobileBoost = typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches;
+    const isDesktopMouse = !isTrackpad && !mobileBoost;
     writer
       .quiz({
-        leniency: BASE_LENIENCY + (isTrackpad ? TRACKPAD_LENIENCY_BOOST : 0) + (mobileBoost ? MOBILE_LENIENCY_BOOST : 0),
+        leniency:
+          BASE_LENIENCY +
+          (isTrackpad ? TRACKPAD_LENIENCY_BOOST : 0) +
+          (mobileBoost ? MOBILE_LENIENCY_BOOST : 0) +
+          (isDesktopMouse ? DESKTOP_MOUSE_LENIENCY_ADJUST : 0),
         averageDistanceThreshold:
-          BASE_DISTANCE_THRESHOLD + (isTrackpad ? TRACKPAD_DISTANCE_BOOST : 0) + (mobileBoost ? MOBILE_DISTANCE_BOOST : 0),
+          BASE_DISTANCE_THRESHOLD +
+          (isTrackpad ? TRACKPAD_DISTANCE_BOOST : 0) +
+          (mobileBoost ? MOBILE_DISTANCE_BOOST : 0) +
+          (isDesktopMouse ? DESKTOP_MOUSE_DISTANCE_ADJUST : 0),
         showHintAfterMisses: HINT_AFTER_MISSES,
         // Suppress hanzi-writer's own default full-character flash on
         // completion (in highlightColor, a blue-purple) — we show our own
