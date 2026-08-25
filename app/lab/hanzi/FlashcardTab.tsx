@@ -938,10 +938,10 @@ function pickReading(card: HanziCard, syllable?: string): { pronunciation: strin
 function CharInfoPopup({ card, syllable }: { card: HanziCard; syllable?: string }) {
   const reading = pickReading(card, syllable);
   return (
-    <div className="w-56 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl p-3.5 text-sm text-zinc-900 dark:text-zinc-100">
+    <div className="w-56 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl p-3.5 text-sm text-left text-zinc-900 dark:text-zinc-100">
       <div className="flex items-start gap-3">
         <span className="text-4xl leading-none">{card.character}</span>
-        <div className="min-w-0">
+        <div className="min-w-0 text-left">
           <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-snug">{reading.pronunciation}</p>
           <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-snug mt-0.5">{extractMeaning(reading.front)}</p>
         </div>
