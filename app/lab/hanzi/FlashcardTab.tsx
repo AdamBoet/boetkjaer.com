@@ -893,6 +893,74 @@ export function AudioButton({ src, label }: { src?: string | null; label: string
   );
 }
 
+// Trimmed-down version of CharacterGrid.tsx's Tooltip — just character,
+// pinyin, and meaning, no difficulty/stats/HanziCraft link, for the
+// per-character popup on a word's review-card header.
+function CharInfoPopup({ card }: { card: HanziCard }) {
+  return (
+    <div className="w-56 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl p-3.5 text-sm text-zinc-900 dark:text-zinc-100">
+      <div className="flex items-start gap-3">
+        <span className="text-4xl leading-none">{card.character}</span>
+        <div className="min-w-0">
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-snug">{card.pronunciation}</p>
+          <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-snug mt-0.5">{card.front}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Renders a word's characters individually clickable/hoverable — any
+// character that's also a card in the hanzi ("汉字 writing") deck shows a
+// small popup with that character's own pinyin/meaning; characters not in
+// the hanzi deck render as plain text with no interaction at all.
+function ClickableHanziWord({ text, hanziByChar }: { text: string; hanziByChar: Map<string, HanziCard> }) {
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const ref = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (openIndex === null) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpenIndex(null);
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [openIndex]);
+
+  const chars = Array.from(text);
+  const shownIndex = openIndex ?? hoverIndex;
+
+  return (
+    <span ref={ref}>
+      {chars.map((ch, i) => {
+        const card = hanziByChar.get(ch);
+        if (!card) return <span key={i}>{ch}</span>;
+        return (
+          <span key={i} className="relative inline-block">
+            <span
+              className="cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpenIndex((cur) => (cur === i ? null : i));
+              }}
+              onMouseEnter={() => setHoverIndex(i)}
+              onMouseLeave={() => setHoverIndex((cur) => (cur === i ? null : cur))}
+            >
+              {ch}
+            </span>
+            {shownIndex === i && (
+              <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-20 animate-dropdown-in">
+                <CharInfoPopup card={card} />
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 export function EditPanel({
   card,
   onClose,
@@ -1180,6 +1248,7 @@ function ReviewSession({
   initialQueue,
   initialPending,
   newTodayIds,
+  hanziByChar,
   onExit,
   onJumpToCard,
   onCardUpdated,
@@ -1187,6 +1256,7 @@ function ReviewSession({
   initialQueue: DueCard[];
   initialPending: { card: DueCard; dueAt: number }[];
   newTodayIds: Set<string>;
+  hanziByChar: Map<string, HanziCard>;
   onExit: () => void;
   onJumpToCard?: (card: { source: DeckKey; dbId: number | string }) => void;
   onCardUpdated?: (source: DeckKey, dbId: number | string, patch: CardStatPatch) => void;
@@ -1538,7 +1608,9 @@ function ReviewSession({
                 onClick={(e) => { e.stopPropagation(); setPinyinPeeked((p) => !p); }}
               >
                 <span />
-                <p className="text-2xl">{current.front}</p>
+                <p className="text-2xl">
+                  <ClickableHanziWord key={current.id} text={current.front} hanziByChar={hanziByChar} />
+                </p>
                 <div className="flex items-center gap-1.5">
                   <AudioButton src={current.audioUrl} label="Play pronunciation" />
                   <svg
@@ -1556,7 +1628,9 @@ function ReviewSession({
             ) : revealed && current.source !== "hanzi" ? (
               <div className="inline-grid grid-cols-[1.5rem_auto_1.5rem] items-center gap-2">
                 <span />
-                <p className="text-2xl">{current.front}</p>
+                <p className="text-2xl">
+                  <ClickableHanziWord key={current.id} text={current.front} hanziByChar={hanziByChar} />
+                </p>
                 <AudioButton src={current.audioUrl} label="Play pronunciation" />
               </div>
             ) : (
@@ -1780,6 +1854,10 @@ export default function FlashcardTab({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
+  // For the per-character popup on a word's review-card header — any
+  // character that's also a hanzi-deck card gets its own pinyin/meaning.
+  const hanziByChar = useMemo(() => new Map(cards.map((c) => [c.character, c])), [cards]);
+
   // Session-limit settings (new cards/day, max reviews/session) live in
   // Supabase, not just localStorage — otherwise phone and desktop each keep
   // their own independent value. Pull the server's copy into localStorage
@@ -1977,6 +2055,7 @@ export default function FlashcardTab({
           initialQueue={queue}
           initialPending={pending}
           newTodayIds={newTodayIds}
+          hanziByChar={hanziByChar}
           onExit={() => setSelectedDeck(null)}
           onJumpToCard={onJumpToCard}
           onCardUpdated={onCardUpdated}
