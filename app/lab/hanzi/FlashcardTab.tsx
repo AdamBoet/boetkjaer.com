@@ -1426,12 +1426,17 @@ function ReviewSession({
         return;
       }
 
-      if (!revealed) return;
       if (e.key.toLowerCase() === "r" && current?.source === "hanzi") {
-        setRedoDrawing(true);
+        // On the back, swaps the filled-in preview for a blank box to trace
+        // again; on the front, the writing box is already up — this just
+        // clears whatever's been drawn so far and starts the stroke count
+        // over, without giving away the answer.
+        if (revealed) setRedoDrawing(true);
         setRedoAttempt((n) => n + 1);
         return;
       }
+
+      if (!revealed) return;
       if (e.key === "1") grade.current("again");
       else if (e.key === "2") grade.current("hard");
       else if (e.key === "3") grade.current("good");
@@ -1587,6 +1592,7 @@ function ReviewSession({
                   )
                 ) : (
                   <HanziWritingBox
+                    key={redoAttempt}
                     character={current.front}
                     showHeader={false}
                     showReference={false}
