@@ -958,10 +958,18 @@ function ClickableHanziWord({
   text,
   pinyin,
   hanziByChar,
+  enabled = true,
 }: {
   text: string;
   pinyin?: string;
   hanziByChar: Map<string, HanziCard>;
+  // Word/sentence text doubles as the click target for the pinyin-peek
+  // toggle on idiom/HSK3/random-words cards — a per-character popup click
+  // (which stops propagation) would otherwise swallow that toggle click
+  // whenever the character happens to also be a hanzi-deck card. Only turn
+  // the per-character popup on once pinyin is already expanded, so the two
+  // features never fight over the same click.
+  enabled?: boolean;
 }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -988,7 +996,7 @@ function ClickableHanziWord({
   return (
     <span ref={ref}>
       {chars.map((ch, i) => {
-        const card = hanziByChar.get(ch);
+        const card = enabled ? hanziByChar.get(ch) : undefined;
         if (!card) return <span key={i}>{ch}</span>;
         return (
           <span key={i} className="relative inline-block">
@@ -1664,7 +1672,7 @@ function ReviewSession({
               >
                 <span />
                 <p className="text-2xl">
-                  <ClickableHanziWord key={current.id} text={current.front} pinyin={current.sub} hanziByChar={hanziByChar} />
+                  <ClickableHanziWord key={current.id} text={current.front} pinyin={current.sub} hanziByChar={hanziByChar} enabled={pinyinPeeked} />
                 </p>
                 <div className="flex items-center gap-1.5">
                   <AudioButton src={current.audioUrl} label="Play pronunciation" />
@@ -1770,7 +1778,7 @@ function ReviewSession({
                       >
                         <span />
                         <p className="text-2xl">
-                          <ClickableHanziWord key={current.id} text={current.sentence} pinyin={current.sentencePinyin} hanziByChar={hanziByChar} />
+                          <ClickableHanziWord key={current.id} text={current.sentence} pinyin={current.sentencePinyin} hanziByChar={hanziByChar} enabled={sentencePinyinPeeked} />
                         </p>
                         <div className="flex items-center gap-1.5">
                           <AudioButton src={current.sentenceAudioUrl} label="Play sentence audio" />
