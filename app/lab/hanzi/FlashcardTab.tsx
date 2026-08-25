@@ -913,14 +913,37 @@ function extractMeaning(front: string): string {
   return groups.length > 0 ? groups.join(" / ") : front;
 }
 
-function CharInfoPopup({ card }: { card: HanziCard }) {
+function normalizeSyllable(s: string): string {
+  return s.trim().toLowerCase().replace(/[^a-zü:1-5]/gi, "");
+}
+
+// `pronunciation`/`front` both list every reading a polyphonic character
+// has, " / "-separated in the same order (e.g. pronunciation "fēn, fen1 /
+// fèn, fen4", front "fen (to divide; minute) / fen (share; portion)") — but
+// a given WORD only ever uses one of them. Match the word's own pinyin
+// syllable at this character's position against each reading's tone-marked
+// form to pick just that one; if nothing matches (mismatched syllable
+// count, unusual formatting, or the card only has one reading anyway),
+// fall back to showing every reading rather than guessing wrong.
+function pickReading(card: HanziCard, syllable?: string): { pronunciation: string; front: string } {
+  const pronSegments = card.pronunciation.split(" / ").map((s) => s.trim());
+  const frontSegments = card.front.split(" / ").map((s) => s.trim());
+  if (!syllable || pronSegments.length <= 1) return { pronunciation: card.pronunciation, front: card.front };
+  const target = normalizeSyllable(syllable);
+  const idx = pronSegments.findIndex((seg) => normalizeSyllable(seg.split(",")[0]) === target);
+  if (idx === -1 || idx >= frontSegments.length) return { pronunciation: card.pronunciation, front: card.front };
+  return { pronunciation: pronSegments[idx], front: frontSegments[idx] };
+}
+
+function CharInfoPopup({ card, syllable }: { card: HanziCard; syllable?: string }) {
+  const reading = pickReading(card, syllable);
   return (
     <div className="w-56 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl p-3.5 text-sm text-zinc-900 dark:text-zinc-100">
       <div className="flex items-start gap-3">
         <span className="text-4xl leading-none">{card.character}</span>
         <div className="min-w-0">
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-snug">{card.pronunciation}</p>
-          <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-snug mt-0.5">{extractMeaning(card.front)}</p>
+          <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-snug">{reading.pronunciation}</p>
+          <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-snug mt-0.5">{extractMeaning(reading.front)}</p>
         </div>
       </div>
     </div>
@@ -931,7 +954,15 @@ function CharInfoPopup({ card }: { card: HanziCard }) {
 // character that's also a card in the hanzi ("汉字 writing") deck shows a
 // small popup with that character's own pinyin/meaning; characters not in
 // the hanzi deck render as plain text with no interaction at all.
-function ClickableHanziWord({ text, hanziByChar }: { text: string; hanziByChar: Map<string, HanziCard> }) {
+function ClickableHanziWord({
+  text,
+  pinyin,
+  hanziByChar,
+}: {
+  text: string;
+  pinyin?: string;
+  hanziByChar: Map<string, HanziCard>;
+}) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const ref = useRef<HTMLSpanElement>(null);
@@ -947,6 +978,12 @@ function ClickableHanziWord({ text, hanziByChar }: { text: string; hanziByChar: 
 
   const chars = Array.from(text);
   const shownIndex = openIndex ?? hoverIndex;
+  // Only trust a positional word-pinyin match when the syllable count
+  // actually lines up with the character count — otherwise a mismatched
+  // index would confidently show the WRONG reading, worse than showing all
+  // of them (pickReading's own fallback).
+  const syllables = pinyin?.trim().split(/\s+/) ?? [];
+  const syllablesAlign = syllables.length === chars.length;
 
   return (
     <span ref={ref}>
@@ -968,7 +1005,7 @@ function ClickableHanziWord({ text, hanziByChar }: { text: string; hanziByChar: 
             </span>
             {shownIndex === i && (
               <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-20 animate-dropdown-in">
-                <CharInfoPopup card={card} />
+                <CharInfoPopup card={card} syllable={syllablesAlign ? syllables[i] : undefined} />
               </span>
             )}
           </span>
@@ -1627,7 +1664,7 @@ function ReviewSession({
               >
                 <span />
                 <p className="text-2xl">
-                  <ClickableHanziWord key={current.id} text={current.front} hanziByChar={hanziByChar} />
+                  <ClickableHanziWord key={current.id} text={current.front} pinyin={current.sub} hanziByChar={hanziByChar} />
                 </p>
                 <div className="flex items-center gap-1.5">
                   <AudioButton src={current.audioUrl} label="Play pronunciation" />
@@ -1647,7 +1684,7 @@ function ReviewSession({
               <div className="inline-grid grid-cols-[1.5rem_auto_1.5rem] items-center gap-2">
                 <span />
                 <p className="text-2xl">
-                  <ClickableHanziWord key={current.id} text={current.front} hanziByChar={hanziByChar} />
+                  <ClickableHanziWord key={current.id} text={current.front} pinyin={current.sub} hanziByChar={hanziByChar} />
                 </p>
                 <AudioButton src={current.audioUrl} label="Play pronunciation" />
               </div>
