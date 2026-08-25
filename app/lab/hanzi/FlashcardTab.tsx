@@ -900,11 +900,17 @@ export function AudioButton({ src, label }: { src?: string | null; label: string
 // pronunciation joined by " / " (e.g. "jiang (to descend) / xiang (to
 // surrender)") — the popup only wants the meaning itself, not the
 // romanization repeated a second time or the literal parens.
+// The data mixes two conventions: separate "romanization (meaning)" groups
+// per pronunciation joined by " / " (e.g. "le (completed action) / liao (to
+// finish; clear)"), and a single "romanization (senseA / senseB)" group
+// where the "/" separates senses of ONE pronunciation, not two different
+// ones (e.g. "zi (child / noun suffix)"). Extracting every parenthetical
+// group directly — rather than splitting on " / " first — handles both:
+// multiple groups get joined with " / ", a single group's own internal "/"
+// is left exactly as written either way.
 function extractMeaning(front: string): string {
-  return front
-    .split(" / ")
-    .map((segment) => segment.replace(/^[^(]*\(([^)]*)\)\s*$/, "$1").trim())
-    .join(" / ");
+  const groups = [...front.matchAll(/\(([^)]*)\)/g)].map((m) => m[1].trim());
+  return groups.length > 0 ? groups.join(" / ") : front;
 }
 
 function CharInfoPopup({ card }: { card: HanziCard }) {
