@@ -1769,7 +1769,9 @@ function ReviewSession({
                         onClick={(e) => { e.stopPropagation(); setSentencePinyinPeeked((p) => !p); }}
                       >
                         <span />
-                        <p className="text-2xl">{current.sentence}</p>
+                        <p className="text-2xl">
+                          <ClickableHanziWord key={current.id} text={current.sentence} pinyin={current.sentencePinyin} hanziByChar={hanziByChar} />
+                        </p>
                         <div className="flex items-center gap-1.5">
                           <AudioButton src={current.sentenceAudioUrl} label="Play sentence audio" />
                           <svg
@@ -1787,7 +1789,9 @@ function ReviewSession({
                     ) : (
                       <div className="inline-grid grid-cols-[1.5rem_auto_1.5rem] items-center gap-2">
                         <span />
-                        <p className="text-2xl">{current.sentence}</p>
+                        <p className="text-2xl">
+                          <ClickableHanziWord key={current.id} text={current.sentence} pinyin={current.sentencePinyin} hanziByChar={hanziByChar} />
+                        </p>
                         <AudioButton src={current.sentenceAudioUrl} label="Play sentence audio" />
                       </div>
                     )}
