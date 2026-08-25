@@ -896,6 +896,17 @@ export function AudioButton({ src, label }: { src?: string | null; label: string
 // Trimmed-down version of CharacterGrid.tsx's Tooltip — just character,
 // pinyin, and meaning, no difficulty/stats/HanziCraft link, for the
 // per-character popup on a word's review-card header.
+// `front` is stored as "romanization (meaning)", possibly repeated per
+// pronunciation joined by " / " (e.g. "jiang (to descend) / xiang (to
+// surrender)") — the popup only wants the meaning itself, not the
+// romanization repeated a second time or the literal parens.
+function extractMeaning(front: string): string {
+  return front
+    .split(" / ")
+    .map((segment) => segment.replace(/^[^(]*\(([^)]*)\)\s*$/, "$1").trim())
+    .join(" / ");
+}
+
 function CharInfoPopup({ card }: { card: HanziCard }) {
   return (
     <div className="w-56 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl p-3.5 text-sm text-zinc-900 dark:text-zinc-100">
@@ -903,7 +914,7 @@ function CharInfoPopup({ card }: { card: HanziCard }) {
         <span className="text-4xl leading-none">{card.character}</span>
         <div className="min-w-0">
           <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-snug">{card.pronunciation}</p>
-          <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-snug mt-0.5">{card.front}</p>
+          <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-snug mt-0.5">{extractMeaning(card.front)}</p>
         </div>
       </div>
     </div>
