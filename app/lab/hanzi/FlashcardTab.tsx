@@ -1492,6 +1492,7 @@ function ReviewSession({
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
 
+      if (e.key === "Escape" && !revealed) { onExit(); return; }
       if (e.key.toLowerCase() === "u") {
         // On the back of a not-yet-graded card, Undo just flips back to the
         // front of that same card. Only on the front does it fall through
@@ -1531,7 +1532,7 @@ function ReviewSession({
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [revealed, editOpen, current, onJumpToCard]);
+  }, [revealed, editOpen, current, onJumpToCard, onExit]);
 
   if (!current) {
     return (
