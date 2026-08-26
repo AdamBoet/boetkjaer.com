@@ -53,8 +53,8 @@ const TRACKPAD_DISTANCE_BOOST = 150;
 // A finger is a lot less precise than a mouse cursor — strokes placed
 // slightly to the side of where they "should" be were getting flagged as
 // mistakes on touch. Loosened the same way trackpad mode already is.
-const MOBILE_LENIENCY_BOOST = 0.15;
-const MOBILE_DISTANCE_BOOST = 40;
+const MOBILE_LENIENCY_BOOST = 0.3;
+const MOBILE_DISTANCE_BOOST = 90;
 // A mouse is precise — hanzi-writer's own defaults (BASE_* above) are
 // slightly too forgiving for plain desktop mouse input specifically (no
 // trackpad, no touch). A prior, larger tightening (-0.3/-100) turned out
