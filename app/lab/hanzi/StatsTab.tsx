@@ -168,7 +168,7 @@ function BarChart({
       </div>
       {hoveredBar && mouse && (
         <div
-          className="absolute z-10 whitespace-nowrap rounded-xl bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 ring-1 ring-zinc-200 dark:ring-zinc-700 shadow-xl px-3.5 py-2.5 pointer-events-none"
+          className="absolute z-50 whitespace-nowrap rounded-xl bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 ring-1 ring-zinc-200 dark:ring-zinc-700 shadow-xl px-3.5 py-2.5 pointer-events-none"
           style={{ left: mouse.x, top: mouse.y, transform: "translate(-50%, calc(-100% - 12px))" }}
         >
           {Array.isArray(hoveredBar.tooltip) ? (
@@ -331,7 +331,7 @@ function CalendarHeatmap({ byDate }: { byDate: Map<string, number> }) {
           if (!c || !c.inYear) return null;
           return (
             <div
-              className="absolute z-10 whitespace-nowrap rounded-xl bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 ring-1 ring-zinc-200 dark:ring-zinc-700 shadow-xl px-3.5 py-2.5 pointer-events-none"
+              className="absolute z-50 whitespace-nowrap rounded-xl bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 ring-1 ring-zinc-200 dark:ring-zinc-700 shadow-xl px-3.5 py-2.5 pointer-events-none"
               style={{ left: mouse.x, top: mouse.y, transform: "translate(-50%, calc(-100% - 12px))" }}
             >
               <p className="text-[13px] font-semibold">{c.count} review{c.count === 1 ? "" : "s"}</p>
