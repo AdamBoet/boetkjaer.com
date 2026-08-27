@@ -21,6 +21,7 @@ export interface WordPhrase {
   example?: string | null;
   example_pinyin?: string | null;
   example_meaning?: string | null;
+  example_audio_url?: string | null;
   picture_url?: string | null;
   interval?: number;
   reps?: number;
@@ -357,6 +358,7 @@ export function toDueCard(key: DeckKey, card: AnyCard, dueDiff: number | null, i
   return {
     id: `wp-${p.note_id}`, dbId: p.note_id, source: p.source, front: p.word, sub: p.pinyin ?? "", back: p.meaning ?? "", dueDiff, isNew, ...stats,
     sentence: p.example ?? undefined, sentencePinyin: p.example_pinyin ?? undefined, sentenceMeaning: p.example_meaning ?? undefined,
+    sentenceAudioUrl: p.example_audio_url,
     pictureUrl: p.picture_url, category: p.category,
   };
 }
