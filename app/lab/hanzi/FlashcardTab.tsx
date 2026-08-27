@@ -1370,6 +1370,30 @@ function ReviewSession({
     setRedoDrawing(false);
   }, [current?.id]);
 
+  // Warms the browser's cache for the next few upcoming cards' audio and
+  // pictures — otherwise the first play/render of each card pays a real
+  // network fetch, which shows up as a beat of silence before the voice
+  // starts or a pop-in on the picture. Never plays/displays anything itself,
+  // just pre-fetches so playback/render is instant once the card is current.
+  const prefetchedUrls = useRef(new Set<string>()).current;
+  useEffect(() => {
+    for (const card of queue.slice(1, 4)) {
+      for (const url of [card.audioUrl, card.sentenceAudioUrl]) {
+        if (!url || prefetchedUrls.has(url)) continue;
+        prefetchedUrls.add(url);
+        const audio = new Audio();
+        audio.preload = "auto";
+        audio.src = url;
+        audio.load();
+      }
+      if (card.pictureUrl && !prefetchedUrls.has(card.pictureUrl)) {
+        prefetchedUrls.add(card.pictureUrl);
+        const img = new Image();
+        img.src = card.pictureUrl;
+      }
+    }
+  }, [queue, prefetchedUrls]);
+
   // Idiom/saying cards, back side only: pinyin is hidden under a click
   // toggle (word/sentence text or the arrow beside it) instead of shown
   // outright.
