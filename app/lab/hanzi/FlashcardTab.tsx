@@ -87,12 +87,14 @@ export interface DueCard {
   learningStep: number | null; // index into LEARNING_STEPS_MIN/RELEARNING_STEPS_MIN
   due: number | null; // epoch seconds; only meaningful while type is 1 or 3
   components?: string; // hanzi only — radical breakdown
-  examples?: string; // hanzi only — usage examples per pronunciation
-  sentence?: string; // hsk3 + hanzi — example sentence
+  examples?: string; // hanzi only — usage examples per pronunciation (superseded by dailyWords for display)
+  dailyWords?: string; // hanzi only — 3 randomly-picked example words, refreshed daily
+  dailyWordsAudioUrl?: string | null;
+  sentence?: string; // hsk3 + wp (random_words/idioms) — example sentence
   sentencePinyin?: string;
   sentenceMeaning?: string;
   audioUrl?: string | null; // word/character pronunciation
-  sentenceAudioUrl?: string | null; // hsk3 + hanzi
+  sentenceAudioUrl?: string | null; // hsk3 + wp
   pictureUrl?: string | null; // hanzi + wp only
   rank?: number; // hanzi only — frequency rank (lower = more common)
   category?: "saying" | "idiom" | null; // idioms only
@@ -343,7 +345,7 @@ export function toDueCard(key: DeckKey, card: AnyCard, dueDiff: number | null, i
     return {
       id: `hanzi-${c.note_id}`, dbId: c.note_id, source: "hanzi", front: c.character, sub: c.pronunciation, back: c.front, dueDiff, isNew, ...stats,
       components: c.components, examples: c.examples, audioUrl: c.audio_url, pictureUrl: c.picture_url, rank: c.rank,
-      sentence: c.sentence ?? undefined, sentencePinyin: c.sentence_pinyin ?? undefined, sentenceAudioUrl: c.sentence_audio_url,
+      dailyWords: c.daily_words ?? undefined, dailyWordsAudioUrl: c.daily_words_audio_url,
     };
   }
   if (key === "hsk3") {
@@ -1788,12 +1790,18 @@ function ReviewSession({
                     )}
                   </div>
                 )}
-                {current.examples && (
-                  <p className="mt-6 text-2xl whitespace-pre-line">{current.examples}</p>
+                {current.source === "hanzi" ? (
+                  current.dailyWords && (
+                    <p className="mt-6 text-2xl whitespace-pre-line">{current.dailyWords}</p>
+                  )
+                ) : (
+                  current.examples && (
+                    <p className="mt-6 text-2xl whitespace-pre-line">{current.examples}</p>
+                  )
                 )}
-                {current.source === "hanzi" && current.audioUrl && (
+                {current.source === "hanzi" && current.dailyWordsAudioUrl && (
                   <div className="flex justify-center">
-                    <AudioButton src={current.audioUrl} label="Play pronunciation" />
+                    <AudioButton src={current.dailyWordsAudioUrl} label="Play pronunciation" />
                   </div>
                 )}
                 {current.sentence && (
