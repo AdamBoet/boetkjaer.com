@@ -1954,28 +1954,21 @@ function ReviewSession({
                         <p className="text-2xl">
                           <ClickableHanziWord key={current.id} text={current.sentence} pinyin={current.sentencePinyin} hanziByChar={hanziByChar} enabled={sentencePinyinPeeked} />
                         </p>
-                        <div className="flex items-center gap-1.5">
-                          <AudioButton src={current.sentenceAudioUrl} label="Play sentence audio" />
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 20 20"
-                            fill="currentColor"
-                            className={`w-4 h-4 shrink-0 text-zinc-400 dark:text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity ${
-                              sentencePinyinPeeked ? "rotate-180" : ""
-                            }`}
-                          >
-                            <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 011.06 0L10 11.94l3.72-3.72a.75.75 0 111.06 1.06l-4.25 4.25a.75.75 0 01-1.06 0L5.22 9.28a.75.75 0 010-1.06z" clipRule="evenodd" />
-                          </svg>
-                        </div>
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 20 20"
+                          fill="currentColor"
+                          className={`w-4 h-4 shrink-0 text-zinc-400 dark:text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity ${
+                            sentencePinyinPeeked ? "rotate-180" : ""
+                          }`}
+                        >
+                          <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 011.06 0L10 11.94l3.72-3.72a.75.75 0 111.06 1.06l-4.25 4.25a.75.75 0 01-1.06 0L5.22 9.28a.75.75 0 010-1.06z" clipRule="evenodd" />
+                        </svg>
                       </div>
                     ) : (
-                      <div className="inline-grid grid-cols-[1.5rem_auto_1.5rem] items-center gap-2">
-                        <span />
-                        <p className="text-2xl">
-                          <ClickableHanziWord key={current.id} text={current.sentence} pinyin={current.sentencePinyin} hanziByChar={hanziByChar} />
-                        </p>
-                        <AudioButton src={current.sentenceAudioUrl} label="Play sentence audio" />
-                      </div>
+                      <p className="text-2xl">
+                        <ClickableHanziWord key={current.id} text={current.sentence} pinyin={current.sentencePinyin} hanziByChar={hanziByChar} />
+                      </p>
                     )}
                     {sentencePinyinPeeked && current.sentencePinyin && (
                       <p className={`text-xl animate-dropdown-in ${idiomRed ? "text-[#8b0000] dark:text-[#e5484d]" : "text-emerald-700 dark:text-emerald-500"}`}>
@@ -1983,6 +1976,11 @@ function ReviewSession({
                       </p>
                     )}
                     {current.sentenceMeaning && <p className="text-2xl">{current.sentenceMeaning}</p>}
+                    {current.sentenceAudioUrl && (
+                      <div className="flex justify-center pt-1">
+                        <AudioButton src={current.sentenceAudioUrl} label="Play sentence audio" />
+                      </div>
+                    )}
                   </div>
                 )}
                 {current.pictureUrl && (
