@@ -1615,6 +1615,12 @@ function ReviewSession({
         setRedoAttempt((n) => n + 1);
         return;
       }
+      if (e.key.toLowerCase() === "r" && current && current.source !== "hanzi" && revealed) {
+        // Same word-then-sentence sequence the reveal itself autoplays.
+        const urls = [current.audioUrl, current.sentenceAudioUrl].filter((u): u is string => !!u);
+        if (urls.length > 0) playAudioSequence(urls);
+        return;
+      }
 
       if (!revealed) return;
       if (e.key === "1") grade.current("again");
