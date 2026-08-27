@@ -70,6 +70,56 @@ export function loadNewCards(deck: DeckKey): number {
   return Number.isFinite(n) && n >= 0 ? n : DEFAULT_NEW_CARDS;
 }
 
+// Generation settings for the local daily_refresh.py cron — hanzi gets a
+// word count (its daily practice-word list), the other three decks get a
+// sentence length cap; all four share a voice choice. Read by the Python
+// script directly from Supabase, not by anything in this app at runtime.
+const DEFAULT_WORD_COUNT = 3;
+const DEFAULT_SENTENCE_MAX_CHARS = 12;
+const DEFAULT_VOICE = "zm_yunxi";
+
+export const KOKORO_VOICES = [
+  { value: "zm_yunxi", label: "Yunxi (male)" },
+  { value: "zm_yunjian", label: "Yunjian (male)" },
+  { value: "zm_yunxia", label: "Yunxia (male)" },
+  { value: "zm_yunyang", label: "Yunyang (male)" },
+  { value: "zf_xiaobei", label: "Xiaobei (female)" },
+  { value: "zf_xiaoni", label: "Xiaoni (female)" },
+  { value: "zf_xiaoxiao", label: "Xiaoxiao (female)" },
+  { value: "zf_xiaoyi", label: "Xiaoyi (female)" },
+] as const;
+
+function wordCountKey(deck: DeckKey) {
+  return `flashcard_word_count_${deck}`;
+}
+
+function sentenceMaxCharsKey(deck: DeckKey) {
+  return `flashcard_sentence_max_chars_${deck}`;
+}
+
+function voiceKey(deck: DeckKey) {
+  return `flashcard_voice_${deck}`;
+}
+
+function loadWordCount(deck: DeckKey): number {
+  if (typeof window === "undefined") return DEFAULT_WORD_COUNT;
+  const stored = localStorage.getItem(wordCountKey(deck));
+  const n = stored ? parseInt(stored, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_WORD_COUNT;
+}
+
+function loadSentenceMaxChars(deck: DeckKey): number {
+  if (typeof window === "undefined") return DEFAULT_SENTENCE_MAX_CHARS;
+  const stored = localStorage.getItem(sentenceMaxCharsKey(deck));
+  const n = stored ? parseInt(stored, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_SENTENCE_MAX_CHARS;
+}
+
+function loadVoice(deck: DeckKey): string {
+  if (typeof window === "undefined") return DEFAULT_VOICE;
+  return localStorage.getItem(voiceKey(deck)) || DEFAULT_VOICE;
+}
+
 export interface DueCard {
   id: string;
   dbId: number | string; // note_id (hanzi) or word (hsk3) — the actual DB key
@@ -521,10 +571,19 @@ function DeckSettingsPopover({
   deckKey: DeckKey;
   anchor: { top: number; right: number };
   onClose: () => void;
-  onSave: (maxReviews: number, newCards: number) => void;
+  onSave: (settings: {
+    maxReviews: number;
+    newCards: number;
+    wordCount?: number;
+    sentenceMaxChars?: number;
+    voice: string;
+  }) => void;
 }) {
   const [maxReviews, setMaxReviews] = useState(() => loadMaxReviews(deckKey));
   const [newCards, setNewCards] = useState(() => loadNewCards(deckKey));
+  const [wordCount, setWordCount] = useState(() => loadWordCount(deckKey));
+  const [sentenceMaxChars, setSentenceMaxChars] = useState(() => loadSentenceMaxChars(deckKey));
+  const [voice, setVoice] = useState(() => loadVoice(deckKey));
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -568,8 +627,58 @@ function DeckSettingsPopover({
         <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
           Controls how many cards show up in a review session here. Doesn&apos;t affect Anki&apos;s own limits.
         </p>
+
+        <div className="pt-1 border-t border-zinc-100 dark:border-zinc-800 space-y-3">
+          <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300 pt-2">Daily refresh</p>
+          {deckKey === "hanzi" ? (
+            <label className="block space-y-1">
+              <span className="text-xs text-zinc-500">Daily practice words</span>
+              <input
+                type="number"
+                min={1}
+                value={wordCount}
+                onChange={(e) => setWordCount(parseInt(e.target.value, 10) || 1)}
+                className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-sm tabular-nums text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              />
+            </label>
+          ) : (
+            <label className="block space-y-1">
+              <span className="text-xs text-zinc-500">Max sentence length (characters)</span>
+              <input
+                type="number"
+                min={1}
+                value={sentenceMaxChars}
+                onChange={(e) => setSentenceMaxChars(parseInt(e.target.value, 10) || 1)}
+                className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-sm tabular-nums text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              />
+            </label>
+          )}
+          <label className="block space-y-1">
+            <span className="text-xs text-zinc-500">Voice</span>
+            <select
+              value={voice}
+              onChange={(e) => setVoice(e.target.value)}
+              className="w-full rounded-md border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 px-2.5 py-1.5 text-sm text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-400"
+            >
+              {KOKORO_VOICES.map((v) => (
+                <option key={v.value} value={v.value}>{v.label}</option>
+              ))}
+            </select>
+          </label>
+          <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
+            Used by the nightly local refresh job — takes effect on this deck&apos;s next daily update, not retroactively.
+          </p>
+        </div>
+
         <button
-          onClick={() => { onSave(maxReviews, newCards); onClose(); }}
+          onClick={() => {
+            onSave(
+              deckKey === "hanzi"
+                ? { maxReviews, newCards, wordCount, voice }
+                : { maxReviews, newCards, sentenceMaxChars, voice }
+            );
+            onClose();
+          }}
           className="w-full rounded-lg px-3 py-1.5 text-xs font-medium text-white bg-zinc-800 dark:bg-zinc-200 dark:text-zinc-900 hover:opacity-90 transition-colors"
         >
           Save
@@ -670,14 +779,17 @@ function DeckMenu({
                 deckKey={d.key}
                 anchor={anchor}
                 onClose={() => setSettingsOpenFor(null)}
-                onSave={(maxReviews, newCards) => {
+                onSave={({ maxReviews, newCards, wordCount, sentenceMaxChars, voice }) => {
                   localStorage.setItem(maxReviewsKey(d.key), String(maxReviews));
                   localStorage.setItem(newCardsKey(d.key), String(newCards));
+                  if (wordCount != null) localStorage.setItem(wordCountKey(d.key), String(wordCount));
+                  if (sentenceMaxChars != null) localStorage.setItem(sentenceMaxCharsKey(d.key), String(sentenceMaxChars));
+                  localStorage.setItem(voiceKey(d.key), voice);
                   forceRerender((n) => n + 1);
                   fetch("/api/hanzi-settings", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ deck: d.key, newCards, maxReviews }),
+                    body: JSON.stringify({ deck: d.key, newCards, maxReviews, wordCount, sentenceMaxChars, voice }),
                   }).catch(() => {});
                 }}
               />
@@ -1996,13 +2108,30 @@ export default function FlashcardTab({
   useEffect(() => {
     fetch("/api/hanzi-settings")
       .then((r) => r.json())
-      .then((byDeck: Record<string, { new_cards: number | null; max_reviews: number | null }>) => {
-        for (const [deck, s] of Object.entries(byDeck)) {
-          if (s.new_cards != null) localStorage.setItem(newCardsKey(deck as DeckKey), String(s.new_cards));
-          if (s.max_reviews != null) localStorage.setItem(maxReviewsKey(deck as DeckKey), String(s.max_reviews));
+      .then(
+        (
+          byDeck: Record<
+            string,
+            {
+              new_cards: number | null;
+              max_reviews: number | null;
+              word_count: number | null;
+              sentence_max_chars: number | null;
+              voice: string | null;
+            }
+          >
+        ) => {
+          for (const [deck, s] of Object.entries(byDeck)) {
+            if (s.new_cards != null) localStorage.setItem(newCardsKey(deck as DeckKey), String(s.new_cards));
+            if (s.max_reviews != null) localStorage.setItem(maxReviewsKey(deck as DeckKey), String(s.max_reviews));
+            if (s.word_count != null) localStorage.setItem(wordCountKey(deck as DeckKey), String(s.word_count));
+            if (s.sentence_max_chars != null)
+              localStorage.setItem(sentenceMaxCharsKey(deck as DeckKey), String(s.sentence_max_chars));
+            if (s.voice != null) localStorage.setItem(voiceKey(deck as DeckKey), s.voice);
+          }
+          setSettingsSynced((n) => n + 1);
         }
-        setSettingsSynced((n) => n + 1);
-      })
+      )
       .catch(() => {});
   }, []);
   useEffect(() => {
