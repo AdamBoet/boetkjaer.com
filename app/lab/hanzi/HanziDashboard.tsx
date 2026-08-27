@@ -32,6 +32,7 @@ function NotificationPrompt() {
 
   useEffect(() => {
     if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    if (!window.matchMedia("(max-width: 767px)").matches) return; // mobile only, not desktop
     if (localStorage.getItem(NOTIFICATION_PROMPT_SEEN_KEY)) return;
     if (Notification.permission !== "default") return;
     setVisible(true);
