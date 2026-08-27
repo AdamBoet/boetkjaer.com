@@ -2113,6 +2113,40 @@ export default function FlashcardTab({
     return buildQueue(items, loadMaxReviews(selectedDeck), newCardsLimit);
   }, [selectedDeck, cards, hsk3Known, randomWords, idioms, newToday, newTodayFetched, settingsSynced]);
 
+  // Warms the very first card's audio/picture for every deck while still
+  // sitting on the deck menu, so picking a deck doesn't cost a fetch on
+  // card one — the prefetch inside ReviewSession only covers upcoming
+  // cards *within* an already-started session, not the moment of entry.
+  const menuPrefetchedUrls = useRef(new Set<string>()).current;
+  useEffect(() => {
+    if (selectedDeck) return;
+    const perDeckItems: { key: DeckKey; card: AnyCard }[][] = [
+      cards.map((card) => ({ key: "hanzi" as const, card })),
+      hsk3Known.map((card) => ({ key: "hsk3" as const, card })),
+      randomWords.map((card) => ({ key: "random_words" as const, card })),
+      idioms.map((card) => ({ key: "idioms" as const, card })),
+    ];
+    for (const [i, items] of perDeckItems.entries()) {
+      const key = (["hanzi", "hsk3", "random_words", "idioms"] as const)[i];
+      const { queue: q, pending: p } = buildQueue(items, loadMaxReviews(key), loadNewCards(key));
+      const first = q[0] ?? p[0]?.card;
+      if (!first) continue;
+      for (const url of [first.audioUrl, first.sentenceAudioUrl]) {
+        if (!url || menuPrefetchedUrls.has(url)) continue;
+        menuPrefetchedUrls.add(url);
+        const audio = new Audio();
+        audio.preload = "auto";
+        audio.src = url;
+        audio.load();
+      }
+      if (first.pictureUrl && !menuPrefetchedUrls.has(first.pictureUrl)) {
+        menuPrefetchedUrls.add(first.pictureUrl);
+        const img = new Image();
+        img.src = first.pictureUrl;
+      }
+    }
+  }, [selectedDeck, cards, hsk3Known, randomWords, idioms, menuPrefetchedUrls]);
+
   if (!selectedDeck) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center gap-3">
