@@ -372,6 +372,24 @@ export function toDueCard(key: DeckKey, card: AnyCard, dueDiff: number | null, i
 // "(meaning)" parenthetical as-is — including multi-pronunciation cards
 // where both `sub` and `back` list readings "/"-separated in the same order.
 function pinyinFrontHeadline(sub: string, back: string): string {
+  const subGroups = sub.split(" / ");
+  const backGroups = back.split(" / ");
+  // Multiple distinct pronunciations pair 1:1 with their own meaning group
+  // (e.g. "lè, le4 / lēi, lei1" + "le (to force) / lei (to strap)") — each
+  // reading needs its own parenthetical, not one appended after all of them.
+  // Guard against the same-romanization-collision format's single merged
+  // parenthetical (e.g. "hao (good; okay / to like)") accidentally matching
+  // this split too — its " / " sits *inside* the parens, so at least one
+  // resulting group won't be a complete "(...)" unit on its own.
+  const backGroupsComplete = backGroups.every((g) => g.includes("(") && g.includes(")"));
+  if (subGroups.length === backGroups.length && subGroups.length > 1 && backGroupsComplete) {
+    return subGroups
+      .map((s, i) => {
+        const parenIdx = backGroups[i].indexOf("(");
+        return parenIdx === -1 ? s : `${s} ${backGroups[i].slice(parenIdx)}`;
+      })
+      .join(" / ");
+  }
   const parenIdx = back.indexOf("(");
   if (parenIdx === -1) return sub || back;
   return `${sub} ${back.slice(parenIdx)}`;
