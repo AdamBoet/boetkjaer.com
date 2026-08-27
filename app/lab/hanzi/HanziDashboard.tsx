@@ -13,6 +13,89 @@ import { useReviewing } from "../../components/ReviewingContext";
 const YEARLY_GOAL = 1500;
 const CARDS_PER_DAY = 5;
 
+const NOTIFICATION_PROMPT_SEEN_KEY = "hanziNotificationPromptSeen";
+
+function urlBase64ToUint8Array(base64: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const base64Safe = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64Safe);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+// Asked once, the first time the app is opened on a device, rather than
+// buried as a settings toggle — lets the daily sentence-refresh cron (runs
+// locally, see Anki flashcards/Anki 汉字/sentence_audio/daily_refresh.py)
+// notify an installed iOS/Android PWA when it finishes, via Web Push.
+function NotificationPrompt() {
+  const [visible, setVisible] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    if (localStorage.getItem(NOTIFICATION_PROMPT_SEEN_KEY)) return;
+    if (Notification.permission !== "default") return;
+    setVisible(true);
+  }, []);
+
+  function dismiss() {
+    localStorage.setItem(NOTIFICATION_PROMPT_SEEN_KEY, "1");
+    setVisible(false);
+  }
+
+  async function enable() {
+    setBusy(true);
+    try {
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      const permission = await Notification.requestPermission();
+      if (permission === "granted") {
+        const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+        if (!key) throw new Error("Missing NEXT_PUBLIC_VAPID_PUBLIC_KEY");
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(key) as BufferSource,
+        });
+        await fetch("/api/push-subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(sub),
+        });
+      }
+    } catch {
+      // Ignore — worst case the user just doesn't get notifications.
+    }
+    dismiss();
+  }
+
+  if (!visible) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-2xl p-5 space-y-3">
+        <p className="font-medium text-zinc-900 dark:text-zinc-100">Enable notifications?</p>
+        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          Get notified on this device when the nightly sentence refresh finishes.
+        </p>
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            onClick={dismiss}
+            disabled={busy}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
+          >
+            Not now
+          </button>
+          <button
+            onClick={enable}
+            disabled={busy}
+            className="px-3 py-1.5 rounded-lg text-sm font-medium bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {busy ? "..." : "Enable"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type AnkiReview = {
   id: number; // epoch ms — also the review's timestamp
   ease: number;
@@ -596,6 +679,7 @@ export default function HanziDashboard({
 
   return (
     <div className="w-full space-y-8 -mt-20 pt-4 md:mt-0 md:pt-0">
+      <NotificationPrompt />
       {!reviewing && (
         <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 border-b border-zinc-200 dark:border-zinc-800">
           {(["flashcards", "hanzi", "hsk3", "browse", "stats"] as const).map((t) => (
