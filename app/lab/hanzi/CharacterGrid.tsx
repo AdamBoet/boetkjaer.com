@@ -13,6 +13,9 @@ export interface HanziCard {
   examples?: string;
   audio_url?: string | null;
   picture_url?: string | null;
+  sentence?: string | null;
+  sentence_pinyin?: string | null;
+  sentence_audio_url?: string | null;
   note_id: number;
   card_id?: number;
   interval?: number;

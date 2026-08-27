@@ -87,11 +87,11 @@ export interface DueCard {
   due: number | null; // epoch seconds; only meaningful while type is 1 or 3
   components?: string; // hanzi only — radical breakdown
   examples?: string; // hanzi only — usage examples per pronunciation
-  sentence?: string; // hsk3 only — example sentence
+  sentence?: string; // hsk3 + hanzi — example sentence
   sentencePinyin?: string;
   sentenceMeaning?: string;
   audioUrl?: string | null; // word/character pronunciation
-  sentenceAudioUrl?: string | null; // hsk3 only
+  sentenceAudioUrl?: string | null; // hsk3 + hanzi
   pictureUrl?: string | null; // hanzi + wp only
   rank?: number; // hanzi only — frequency rank (lower = more common)
   category?: "saying" | "idiom" | null; // idioms only
@@ -342,6 +342,7 @@ export function toDueCard(key: DeckKey, card: AnyCard, dueDiff: number | null, i
     return {
       id: `hanzi-${c.note_id}`, dbId: c.note_id, source: "hanzi", front: c.character, sub: c.pronunciation, back: c.front, dueDiff, isNew, ...stats,
       components: c.components, examples: c.examples, audioUrl: c.audio_url, pictureUrl: c.picture_url, rank: c.rank,
+      sentence: c.sentence ?? undefined, sentencePinyin: c.sentence_pinyin ?? undefined, sentenceAudioUrl: c.sentence_audio_url,
     };
   }
   if (key === "hsk3") {

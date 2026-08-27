@@ -9,6 +9,104 @@ import { loadNewCards } from "./FlashcardTab";
 const DEFAULT_YEARLY_GOAL = 1500;
 const YEARLY_GOAL_KEY = "hanzi_yearly_goal";
 
+function urlBase64ToUint8Array(base64: string): Uint8Array {
+  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+  const base64Safe = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64Safe);
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+// Lets the daily sentence-refresh cron (runs locally, see
+// Anki flashcards/Anki 汉字/sentence_audio/daily_refresh.py) notify an
+// installed iOS/Android PWA when it finishes, via Web Push.
+function NotificationToggle() {
+  const [status, setStatus] = useState<"unsupported" | "denied" | "off" | "on" | "busy">("off");
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setStatus("unsupported");
+      return;
+    }
+    if (Notification.permission === "denied") {
+      setStatus("denied");
+      return;
+    }
+    navigator.serviceWorker.getRegistration().then(async (reg) => {
+      const sub = await reg?.pushManager.getSubscription();
+      setStatus(sub ? "on" : "off");
+    });
+  }, []);
+
+  async function enable() {
+    setStatus("busy");
+    try {
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        setStatus("denied");
+        return;
+      }
+      const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      if (!key) throw new Error("Missing NEXT_PUBLIC_VAPID_PUBLIC_KEY");
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(key) as BufferSource,
+      });
+      await fetch("/api/push-subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sub),
+      });
+      setStatus("on");
+    } catch {
+      setStatus("off");
+    }
+  }
+
+  async function disable() {
+    setStatus("busy");
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = await reg?.pushManager.getSubscription();
+      if (sub) {
+        await fetch("/api/push-subscribe", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: sub.endpoint }),
+        });
+        await sub.unsubscribe();
+      }
+      setStatus("off");
+    } catch {
+      setStatus("on");
+    }
+  }
+
+  if (status === "unsupported") return null;
+
+  return (
+    <div className="flex items-center justify-between text-sm bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 px-4 py-3">
+      <div>
+        <p className="font-medium">Sentence-refresh notifications</p>
+        <p className="text-xs text-zinc-500 dark:text-zinc-400">
+          {status === "denied"
+            ? "Blocked — enable notifications for this site in your phone's settings."
+            : "Get notified when the nightly sentence refresh finishes."}
+        </p>
+      </div>
+      {status !== "denied" && (
+        <button
+          onClick={status === "on" ? disable : enable}
+          disabled={status === "busy"}
+          className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium border border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
+        >
+          {status === "on" ? "Disable" : status === "busy" ? "..." : "Enable"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function loadYearlyGoal(): number {
   if (typeof window === "undefined") return DEFAULT_YEARLY_GOAL;
   const n = parseInt(localStorage.getItem(YEARLY_GOAL_KEY) ?? "", 10);
@@ -238,6 +336,7 @@ export default function HanziTab({
 
   return (
     <div className="space-y-4">
+      <NotificationToggle />
       <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1">
         {(["overview", "characters"] as const).map((key) => (
           <button
