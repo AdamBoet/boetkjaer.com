@@ -1728,7 +1728,10 @@ function ReviewSession({
                   <ClickableHanziWord key={current.id} text={current.front} pinyin={current.sub} hanziByChar={hanziByChar} enabled={pinyinPeeked} />
                 </p>
                 <div className="flex items-center gap-1.5">
-                  <AudioButton src={current.audioUrl} label="Play pronunciation" />
+                  {/* Sentence audio (below) already narrates the word first
+                      once it exists — the standalone word button is only a
+                      fallback for a card that hasn't gotten one yet. */}
+                  {!current.sentenceAudioUrl && <AudioButton src={current.audioUrl} label="Play pronunciation" />}
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     viewBox="0 0 20 20"
@@ -1747,7 +1750,7 @@ function ReviewSession({
                 <p className="text-2xl">
                   <ClickableHanziWord key={current.id} text={current.front} pinyin={current.sub} hanziByChar={hanziByChar} />
                 </p>
-                <AudioButton src={current.audioUrl} label="Play pronunciation" />
+                {!current.sentenceAudioUrl && <AudioButton src={current.audioUrl} label="Play pronunciation" />}
               </div>
             ) : (
               <p className="text-2xl text-center">
