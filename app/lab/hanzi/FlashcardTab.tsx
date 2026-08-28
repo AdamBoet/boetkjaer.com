@@ -1898,6 +1898,7 @@ function ReviewSession({
                       character={current.front}
                       showHeader={false}
                       showReference={false}
+                      traceOutline
                       onComplete={() => setRedoDrawing(false)}
                     />
                   ) : (
