@@ -1540,9 +1540,13 @@ function ReviewSession({
 
   useEffect(() => {
     if (!revealed) return;
-    // Word audio, then sentence audio — chained through the shared audio
-    // element so it never overlaps a manual button press either.
-    const urls = [current?.audioUrl, current?.sentenceAudioUrl].filter((u): u is string => !!u);
+    // sentenceAudioUrl already narrates the word first, then the sentence,
+    // in one clip — queuing the standalone word audio in front of it would
+    // just say the word twice. Only fall back to the word-only clip for a
+    // card that doesn't have sentence audio yet.
+    const urls = current?.sentenceAudioUrl
+      ? [current.sentenceAudioUrl]
+      : [current?.audioUrl].filter((u): u is string => !!u);
     if (urls.length > 0) playAudioSequence(urls);
 
     return () => {
@@ -1728,8 +1732,11 @@ function ReviewSession({
         return;
       }
       if (e.key.toLowerCase() === "r" && current && current.source !== "hanzi" && revealed) {
-        // Same word-then-sentence sequence the reveal itself autoplays.
-        const urls = [current.audioUrl, current.sentenceAudioUrl].filter((u): u is string => !!u);
+        // Same audio the reveal itself autoplays — sentenceAudioUrl already
+        // narrates the word first, so don't also queue the standalone clip.
+        const urls = current.sentenceAudioUrl
+          ? [current.sentenceAudioUrl]
+          : [current.audioUrl].filter((u): u is string => !!u);
         if (urls.length > 0) playAudioSequence(urls);
         return;
       }
