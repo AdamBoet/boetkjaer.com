@@ -700,7 +700,15 @@ export default function HanziWritingBox({
         padding: 12,
         showOutline: helpSettingsRef.current.showOutline,
         showCharacter: false,
-        ...(isDarkMode() ? { strokeColor: DARK_STROKE_COLOR, outlineColor: DARK_OUTLINE_COLOR } : {}),
+        // revealReferenceStroke() reveals a completed stroke by directly
+        // poking hanzi-writer's internal render state (no public API for
+        // this) rather than going through the normal quiz-complete flow —
+        // that path renders with highlightColor, not strokeColor, so it was
+        // never touched by the strokeColor/outlineColor dark-mode overrides
+        // above and stayed stuck on hanzi-writer's own default '#AAF'.
+        ...(isDarkMode()
+          ? { strokeColor: DARK_STROKE_COLOR, outlineColor: DARK_OUTLINE_COLOR, highlightColor: DARK_STROKE_COLOR }
+          : {}),
       });
       referenceWriterRef.current.hideCharacter({ duration: 0 })?.then(() => {
         resetReferenceStrokes(referenceWriterRef.current);
