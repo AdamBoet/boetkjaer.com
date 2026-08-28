@@ -1540,13 +1540,12 @@ function ReviewSession({
 
   useEffect(() => {
     if (!revealed) return;
-    // sentenceAudioUrl already narrates the word first, then the sentence,
-    // in one clip — queuing the standalone word audio in front of it would
-    // just say the word twice. Only fall back to the word-only clip for a
-    // card that doesn't have sentence audio yet.
-    const urls = current?.sentenceAudioUrl
-      ? [current.sentenceAudioUrl]
-      : [current?.audioUrl].filter((u): u is string => !!u);
+    // sentenceAudioUrl (hsk3/random_words/idioms) and dailyWordsAudioUrl
+    // (hanzi) already narrate the word first, so queuing the standalone
+    // word-only clip in front of either would just say it twice. Only fall
+    // back to that old clip for a card that doesn't have the newer one yet.
+    const preferred = current?.sentenceAudioUrl || current?.dailyWordsAudioUrl;
+    const urls = preferred ? [preferred] : [current?.audioUrl].filter((u): u is string => !!u);
     if (urls.length > 0) playAudioSequence(urls);
 
     return () => {
