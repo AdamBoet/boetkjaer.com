@@ -1894,7 +1894,7 @@ function ReviewSession({
                 {revealed ? (
                   redoDrawing ? (
                     <HanziWritingBox
-                      key={redoAttempt}
+                      key={`redraw-${redoAttempt}`}
                       character={current.front}
                       showHeader={false}
                       showReference={false}
@@ -1906,7 +1906,7 @@ function ReviewSession({
                   )
                 ) : (
                   <HanziWritingBox
-                    key={redoAttempt}
+                    key={`front-${redoAttempt}`}
                     character={current.front}
                     showHeader={false}
                     showReference={false}
