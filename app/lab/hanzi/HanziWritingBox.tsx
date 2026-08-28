@@ -669,7 +669,14 @@ export default function HanziWritingBox({
           ? traceOutline || (showReference && helpSettingsRef.current.showOutline)
           : traceOutline,
         showCharacter: false,
-        ...(isDarkMode() ? { outlineColor: DARK_OUTLINE_COLOR } : {}),
+        // strokeColor/highlightColor matter on mobile, where this box's own
+        // official-stroke reveal isn't suppressed (see hideOfficialStrokes
+        // below) — without them it falls back to hanzi-writer's own
+        // light-mode defaults ('#555' stroke, '#AAF' highlight) regardless
+        // of theme.
+        ...(isDarkMode()
+          ? { strokeColor: DARK_STROKE_COLOR, outlineColor: DARK_OUTLINE_COLOR, highlightColor: DARK_STROKE_COLOR }
+          : {}),
         // Distinct from the reference box's gray so it's unmistakably the
         // user's own ink, never the hidden "official" stroke layer. Left
         // out entirely (not just `undefined`) on mobile so hanzi-writer's
