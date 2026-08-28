@@ -9,12 +9,15 @@ import { useGridPref } from "./GridPrefContext";
 // and can't parse the CSS "currentColor" keyword — passing it as a color
 // option silently breaks writer creation entirely (no drawing, no hint).
 // Real hex values, picked from the resolved theme, instead.
-// One shared color for both the filled-in preview's strokes and the
-// interactive box's trace outline — previously two different grays (a light
-// one for strokes, a much darker one for the outline) that didn't match
-// between the front and back of a card.
+// hanzi-writer's own light-mode defaults are strokeColor '#555' (dark, bold)
+// vs outlineColor '#DDD' (light, subtle) — the outline is meant to fade into
+// a white background while the stroke stands out. A single shared dark-mode
+// gray for both (previous fix, for a front/back mismatch — see git history)
+// lost that relationship: against a dark background the outline needs to be
+// the *darker* one (closer to the background) and the stroke the *lighter*
+// one (standing out from it), not both mapped to the same middle gray.
 export const DARK_STROKE_COLOR = "#a1a1aa";
-export const DARK_OUTLINE_COLOR = "#a1a1aa";
+export const DARK_OUTLINE_COLOR = "#52525b";
 
 // Read the theme straight off the DOM (next-themes applies the `dark` class
 // synchronously before first paint, specifically to avoid a flash of the
