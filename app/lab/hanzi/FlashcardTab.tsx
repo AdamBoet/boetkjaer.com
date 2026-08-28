@@ -1499,8 +1499,11 @@ function ReviewSession({
   const [redoDrawing, setRedoDrawing] = useState(false);
   const [redoAttempt, setRedoAttempt] = useState(0);
   useEffect(() => {
-    setRedoDrawing(false);
-  }, [current?.id]);
+    // Revealing a hanzi card should start the back side already in redraw
+    // mode (blank, ready to trace) rather than showing the filled-in
+    // preview first and requiring an extra R press to clear it.
+    setRedoDrawing(revealed && current?.source === "hanzi");
+  }, [revealed, current?.id, current?.source]);
 
   // Warms the browser's cache for the next few upcoming cards' audio and
   // pictures — otherwise the first play/render of each card pays a real
