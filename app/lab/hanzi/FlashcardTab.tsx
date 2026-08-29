@@ -2149,6 +2149,20 @@ export default function FlashcardTab({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
+  // Space bar = Study Now on the deck-overview screen, mirroring its use
+  // as the primary reveal/grade action once inside a review session.
+  useEffect(() => {
+    if (!overviewFor || selectedDeck) return;
+    function handleKey(e: KeyboardEvent) {
+      if (e.code === "Space") {
+        e.preventDefault();
+        setSelectedDeck(overviewFor);
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [overviewFor, selectedDeck]);
+
   // For the per-character popup on a word's review-card header — any
   // character that's also a hanzi-deck card gets its own pinyin/meaning.
   const hanziByChar = useMemo(() => new Map(cards.map((c) => [c.character, c])), [cards]);
