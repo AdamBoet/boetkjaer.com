@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState, useEffect, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
 import { type HanziCard } from "./CharacterGrid";
 import { cardDueDiff } from "./card-utils";
 import { type Hsk3Coverage, type Hsk3Word, LEVELS } from "./Hsk3Grid";
@@ -1134,7 +1135,7 @@ function ClickableHanziWord({
         const card = enabled ? hanziByChar.get(ch) : undefined;
         if (!card) return <span key={i}>{ch}</span>;
         return (
-          <span key={i} className="relative inline-block">
+          <span key={i} className="relative inline-block z-30">
             <span
               className="cursor-pointer"
               onClick={(e) => {
@@ -1154,6 +1155,20 @@ function ClickableHanziWord({
           </span>
         );
       })}
+      {/* Portalled (not a plain sibling div) since this component renders
+          inline inside <p> elements — a block-level div sibling there would
+          be invalid HTML and cause the browser to auto-close the paragraph.
+          Intercepts the dismissing click itself (rather than just closing
+          via the mousedown listener below, which can't stop the paired
+          click from also bubbling into the card body's tap-to-advance
+          handler) so dismissing this popup never also grades/advances the
+          card underneath it. */}
+      {openIndex !== null &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-20" onClick={() => setOpenIndex(null)} />,
+          document.body
+        )}
     </span>
   );
 }
