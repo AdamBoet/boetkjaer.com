@@ -1900,6 +1900,7 @@ function ReviewSession({
                       showReference={false}
                       traceOutline
                       onComplete={() => setRedoDrawing(false)}
+                      mobileComponents={current.components}
                     />
                   ) : (
                     <HanziCharacterPreview character={current.front} />
@@ -1912,13 +1913,25 @@ function ReviewSession({
                     showReference={false}
                     traceOutline={current.isNew}
                     onComplete={handleWriteComplete}
+                    mobileComponents={current.isNew ? current.components : undefined}
                   />
                 )}
               </div>
             )}
 
             {(revealed || current.isNew) && current.components && (
-              <p className="mt-1.5 text-sm text-zinc-500 dark:text-zinc-400 text-center">{current.components}</p>
+              // Mobile shows this via HanziWritingBox's own mobileComponents
+              // prop (above its Hint button) whenever that box is actually
+              // rendered — only fall back to this copy on mobile too when
+              // the box has been swapped for the static filled-in preview
+              // instead (no competing Hint button there).
+              <p
+                className={`mt-1.5 text-sm text-zinc-500 dark:text-zinc-400 text-center ${
+                  !revealed || redoDrawing ? "hidden md:block" : ""
+                }`}
+              >
+                {current.components}
+              </p>
             )}
 
             {revealed && (

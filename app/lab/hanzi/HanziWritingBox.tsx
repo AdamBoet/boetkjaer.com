@@ -234,11 +234,14 @@ export default function HanziWritingBox({
   extraHotkeys,
   showReference = true,
   traceOutline = false,
+  mobileComponents,
 }: {
   character: string;
   onComplete?: () => void;
   showHeader?: boolean;
   pronunciation?: string;
+  /** Components text (e.g. "者 (person; one who), 阝 (town radical)"), shown above the mobile Hint button — on desktop this renders separately, below the whole box. */
+  mobileComponents?: string;
   front?: string;
   rank?: number;
   /** Extra hotkey rows to list alongside T/S/H — e.g. the caller's own ←/→ navigation. */
@@ -805,6 +808,10 @@ export default function HanziWritingBox({
             </div>
           )}
         </div>
+
+        {mobileComponents && (
+          <p className="md:hidden text-sm text-zinc-500 dark:text-zinc-400 text-center">{mobileComponents}</p>
+        )}
 
         <div className="md:hidden flex flex-col items-center gap-2">
           <button
