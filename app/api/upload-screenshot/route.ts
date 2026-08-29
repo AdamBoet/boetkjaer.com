@@ -16,6 +16,27 @@ export async function GET() {
   return NextResponse.json({ screenshots: data ?? [] });
 }
 
+export async function DELETE(req: NextRequest) {
+  const { id } = await req.json();
+  if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
+
+  const { data: row, error: fetchError } = await supabaseAdmin
+    .from("screenshot_queue")
+    .select("storage_path")
+    .eq("id", id)
+    .single();
+  if (fetchError) return NextResponse.json({ error: fetchError.message }, { status: 500 });
+
+  if (row?.storage_path) {
+    await supabaseAdmin.storage.from(BUCKET).remove([row.storage_path]);
+  }
+
+  const { error: deleteError } = await supabaseAdmin.from("screenshot_queue").delete().eq("id", id);
+  if (deleteError) return NextResponse.json({ error: deleteError.message }, { status: 500 });
+
+  return NextResponse.json({ ok: true });
+}
+
 export async function POST(req: NextRequest) {
   const { filename, contentType, contentBase64 } = await req.json();
   if (!filename || !contentBase64) {
