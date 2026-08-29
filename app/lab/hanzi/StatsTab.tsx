@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { type HanziCard } from "./CharacterGrid";
 import { type Hsk3Coverage } from "./Hsk3Grid";
 import { type WordPhrase, type DeckKey, DECK_LABELS } from "./FlashcardTab";
@@ -117,16 +118,13 @@ function BarChart({
   const hoveredBar = hover != null ? bars[hover] : null;
 
   function handleMove(e: React.MouseEvent) {
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setMouse({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    setMouse({ x: e.clientX, y: e.clientY });
   }
 
   // Touch has no hover — tapping a bar shows its tooltip the same way
   // hovering does on desktop; tapping the same bar again dismisses it.
   function handleTap(e: React.MouseEvent, i: number) {
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (rect) setMouse({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    setMouse({ x: e.clientX, y: e.clientY });
     setHover((h) => (h === i ? null : i));
   }
 
@@ -167,10 +165,7 @@ function BarChart({
         })}
       </div>
       {hoveredBar && mouse && (
-        <div
-          className="absolute z-50 whitespace-nowrap rounded-xl bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 ring-1 ring-zinc-200 dark:ring-zinc-700 shadow-xl px-3.5 py-2.5 pointer-events-none"
-          style={{ left: mouse.x, top: mouse.y, transform: "translate(-50%, calc(-100% - 12px))" }}
-        >
+        <HoverTooltip x={mouse.x} y={mouse.y}>
           {Array.isArray(hoveredBar.tooltip) ? (
             <div className="space-y-0.5">
               <p className="text-[13px] font-semibold">{hoveredBar.tooltip[0]}</p>
@@ -185,7 +180,7 @@ function BarChart({
               </span>
             )
           )}
-        </div>
+        </HoverTooltip>
       )}
       <div
         className="flex justify-center gap-[3px] mt-1 mx-auto"
@@ -205,6 +200,27 @@ function BarChart({
         ))}
       </div>
     </div>
+  );
+}
+
+// Renders directly to document.body via a portal, at fixed (viewport-
+// relative) coordinates — z-index alone couldn't reliably keep these hover
+// tooltips above the rest of the page, since they live inside an
+// `overflow-x-auto` chart container, and any ancestor's own stacking
+// context (transform/opacity/z-index) can trap a descendant's z-index
+// beneath sibling content no matter how high that value is. Escaping to
+// body sidesteps both the clipping and the stacking-context problem
+// entirely instead of continuing to chase z-index numbers.
+function HoverTooltip({ x, y, children }: { x: number; y: number; children: React.ReactNode }) {
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <div
+      className="fixed z-[9999] whitespace-nowrap rounded-xl bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 ring-1 ring-zinc-200 dark:ring-zinc-700 shadow-xl px-3.5 py-2.5 pointer-events-none"
+      style={{ left: x, top: y, transform: "translate(-50%, calc(-100% - 12px))" }}
+    >
+      {children}
+    </div>,
+    document.body
   );
 }
 
@@ -246,16 +262,13 @@ function CalendarHeatmap({ byDate }: { byDate: Map<string, number> }) {
   const gridRef = useRef<HTMLDivElement>(null);
 
   function handleMove(e: React.MouseEvent) {
-    const rect = gridRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setMouse({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    setMouse({ x: e.clientX, y: e.clientY });
   }
 
   // Touch has no hover — tapping a day shows its tooltip; tapping the same
   // day again dismisses it.
   function handleTap(e: React.MouseEvent, key: string) {
-    const rect = gridRef.current?.getBoundingClientRect();
-    if (rect) setMouse({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    setMouse({ x: e.clientX, y: e.clientY });
     setHover((h) => (h === key ? null : key));
   }
 
@@ -303,12 +316,11 @@ function CalendarHeatmap({ byDate }: { byDate: Map<string, number> }) {
           </svg>
         </button>
       </div>
-      {/* pt-7 gives hover tooltips room to render above the day squares —
-          `overflow-x-auto` alone makes the browser treat overflow-y as
-          clipped too (CSS doesn't allow mixing visible with a scrolling
-          axis), so without this padding tooltips popping upward got cut
-          off at the container's own top edge. pb-7 balances it so the grid
-          sits centered in its section instead of pushed toward the top. */}
+      {/* pt-7/pb-7 just keep the grid visually centered in its section —
+          the hover tooltip itself now portals to document.body (see
+          HoverTooltip) so it's no longer affected by this container's
+          overflow-x-auto clipping overflow-y too (CSS doesn't allow mixing
+          visible with a scrolling axis). */}
       <div className="relative overflow-x-auto pt-7 pb-7 flex justify-center" ref={gridRef} onMouseMove={handleMove}>
         <div
           className="grid grid-flow-col gap-[3px] w-max"
@@ -330,13 +342,10 @@ function CalendarHeatmap({ byDate }: { byDate: Map<string, number> }) {
           const c = cells.find((cell) => cell.key === hover);
           if (!c || !c.inYear) return null;
           return (
-            <div
-              className="absolute z-50 whitespace-nowrap rounded-xl bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 ring-1 ring-zinc-200 dark:ring-zinc-700 shadow-xl px-3.5 py-2.5 pointer-events-none"
-              style={{ left: mouse.x, top: mouse.y, transform: "translate(-50%, calc(-100% - 12px))" }}
-            >
+            <HoverTooltip x={mouse.x} y={mouse.y}>
               <p className="text-[13px] font-semibold">{c.count} review{c.count === 1 ? "" : "s"}</p>
               <p className="text-[12px] text-zinc-500 dark:text-zinc-400">{c.key}</p>
-            </div>
+            </HoverTooltip>
           );
         })()}
       </div>
