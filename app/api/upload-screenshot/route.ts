@@ -4,6 +4,18 @@ import { supabaseAdmin } from "@/lib/supabase-server";
 // Same bucket as upload-media/route.ts and create_card.py's upload_media().
 const BUCKET = "mandarin-media";
 
+// Pending screenshots — not yet picked up by tonight's daily_refresh.py run
+// — for the "X uploaded" indicator/popup on the random_words deck screen.
+export async function GET() {
+  const { data, error } = await supabaseAdmin
+    .from("screenshot_queue")
+    .select("id,image_url,created_at")
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ screenshots: data ?? [] });
+}
+
 export async function POST(req: NextRequest) {
   const { filename, contentType, contentBase64 } = await req.json();
   if (!filename || !contentBase64) {
