@@ -9,6 +9,7 @@ import HanziWritingBox from "./HanziWritingBox";
 import HanziCharacterPreview from "./HanziCharacterPreview";
 import { TrackpadModeProvider, useTrackpadModeContext } from "./TrackpadModeContext";
 import { GridPrefProvider, useGridPref } from "./GridPrefContext";
+import ScreenshotUploadButton from "./ScreenshotUploadButton";
 
 export interface WordPhrase {
   note_id: number;
@@ -2140,6 +2141,11 @@ export default function FlashcardTab({
   onCardUpdated?: (source: DeckKey, dbId: number | string, patch: CardStatPatch) => void;
 }) {
   const [selectedDeck, setSelectedDeck] = useState<DeckKey | null>(null);
+  // Anki-style intermediate screen (New/Learning/To Review + Study Now)
+  // shown between picking a deck and actually entering review — distinct
+  // from selectedDeck so exiting a session can drop back to the deck list
+  // rather than straight back into this screen.
+  const [overviewFor, setOverviewFor] = useState<DeckKey | null>(null);
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -2359,10 +2365,10 @@ export default function FlashcardTab({
     }
   }, [selectedDeck, cards, hsk3Known, randomWords, idioms, menuPrefetchedUrls]);
 
-  if (!selectedDeck) {
+  if (!overviewFor && !selectedDeck) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center gap-3">
-        <DeckMenu decks={decks} onSelect={setSelectedDeck} />
+        <DeckMenu decks={decks} onSelect={setOverviewFor} />
         {todayStats && todayStats.count > 0 && (
           <p className="text-sm text-zinc-500 dark:text-zinc-400">
             Studied <span className="font-semibold tabular-nums text-zinc-700 dark:text-zinc-200">{todayStats.count}</span> cards in{" "}
@@ -2374,6 +2380,41 @@ export default function FlashcardTab({
     );
   }
 
+  if (overviewFor && !selectedDeck) {
+    const d = decks.find((deck) => deck.key === overviewFor);
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-6">
+        <div className="flex items-center gap-2">
+          <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">{DECK_LABELS[overviewFor]}</h2>
+          {overviewFor === "random_words" && <ScreenshotUploadButton />}
+        </div>
+        <div className="space-y-2 text-base">
+          <p className="flex items-center justify-between gap-8">
+            <span className="text-zinc-600 dark:text-zinc-300">New:</span>
+            <span className="font-semibold tabular-nums text-blue-500 dark:text-blue-400">{d?.newCount ?? 0}</span>
+          </p>
+          <p className="flex items-center justify-between gap-8">
+            <span className="text-zinc-600 dark:text-zinc-300">Learning:</span>
+            <span className="font-semibold tabular-nums text-red-500 dark:text-red-400">{d?.learnCount ?? 0}</span>
+          </p>
+          <p className="flex items-center justify-between gap-8">
+            <span className="text-zinc-600 dark:text-zinc-300">To Review:</span>
+            <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-500">{d?.dueCount ?? 0}</span>
+          </p>
+        </div>
+        <button
+          onClick={() => setSelectedDeck(overviewFor)}
+          className="rounded-lg bg-zinc-800 dark:bg-zinc-200 px-6 py-2.5 text-sm font-medium text-white dark:text-zinc-900"
+        >
+          Study Now
+        </button>
+        <button onClick={() => setOverviewFor(null)} className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">
+          ← Decks
+        </button>
+      </div>
+    );
+  }
+
   if (queue.length === 0 && pending.length === 0) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4 max-w-xl mx-auto">
@@ -2381,7 +2422,13 @@ export default function FlashcardTab({
           <p className="text-lg font-semibold text-emerald-600 dark:text-emerald-500">All caught up!</p>
           <p className="text-sm text-zinc-500 mt-1">Nothing due in this deck right now.</p>
         </div>
-        <button onClick={() => setSelectedDeck(null)} className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">
+        <button
+          onClick={() => {
+            setSelectedDeck(null);
+            setOverviewFor(null);
+          }}
+          className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+        >
           ← Decks
         </button>
       </div>
@@ -2396,7 +2443,10 @@ export default function FlashcardTab({
           initialPending={pending}
           newTodayIds={newTodayIds}
           hanziByChar={hanziByChar}
-          onExit={() => setSelectedDeck(null)}
+          onExit={() => {
+            setSelectedDeck(null);
+            setOverviewFor(null);
+          }}
           onJumpToCard={onJumpToCard}
           onCardUpdated={onCardUpdated}
         />
