@@ -76,9 +76,11 @@ export default function ScreenshotUploadButton() {
   useEffect(() => {
     if (!showPopup) return;
     function handleKey(e: KeyboardEvent) {
-      if (e.key === "ArrowRight") goTo(1);
+      if (e.key === "Escape") {
+        if (confirmDeleteId !== null) setConfirmDeleteId(null);
+        else setShowPopup(false);
+      } else if (e.key === "ArrowRight") goTo(1);
       else if (e.key === "ArrowLeft") goTo(-1);
-      else if (e.key === "Escape") setShowPopup(false);
       else if (e.key === "Backspace" || e.key === "Delete") {
         const s = pending[viewIndex];
         if (s) setConfirmDeleteId(s.id);
@@ -87,7 +89,7 @@ export default function ScreenshotUploadButton() {
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showPopup, pending, viewIndex]);
+  }, [showPopup, pending, viewIndex, confirmDeleteId]);
 
   async function handleSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -192,26 +194,7 @@ export default function ScreenshotUploadButton() {
                 </div>
               </div>
 
-              {confirmDeleteId === pending[viewIndex].id ? (
-                <div className="flex flex-col items-center justify-center gap-3 aspect-square px-6">
-                  <p className="text-sm text-center text-zinc-700 dark:text-zinc-300">Remove this screenshot?</p>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setConfirmDeleteId(null)}
-                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={() => handleDelete(pending[viewIndex].id)}
-                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-white bg-red-500 hover:bg-red-600"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div
+              <div
                   className="relative flex items-center justify-center bg-zinc-100 dark:bg-zinc-950 aspect-square"
                   onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX; }}
                   onTouchEnd={(e) => {
@@ -251,8 +234,32 @@ export default function ScreenshotUploadButton() {
                       </svg>
                     </button>
                   )}
-                </div>
-              )}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {confirmDeleteId !== null &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/60">
+            <div className="w-full max-w-xs rounded-2xl bg-white dark:bg-zinc-900 shadow-2xl p-5 flex flex-col items-center gap-4">
+              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Delete screenshot?</p>
+              <div className="flex items-center gap-3 w-full">
+                <button
+                  onClick={() => setConfirmDeleteId(null)}
+                  className="flex-1 rounded-lg px-3 py-2 text-sm font-medium text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                >
+                  No
+                </button>
+                <button
+                  onClick={() => handleDelete(confirmDeleteId)}
+                  className="flex-1 rounded-lg px-3 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600"
+                >
+                  Yes
+                </button>
+              </div>
             </div>
           </div>,
           document.body
