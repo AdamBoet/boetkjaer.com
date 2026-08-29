@@ -1498,11 +1498,21 @@ function ReviewSession({
   // redraw doesn't just sit there stale the next time R is pressed.
   const [redoDrawing, setRedoDrawing] = useState(false);
   const [redoAttempt, setRedoAttempt] = useState(0);
+  // Tracks whether the current reveal came from successfully drawing the
+  // character on the front side (handleWriteComplete's auto-reveal timer)
+  // rather than Show Answer/Space — only the latter should force the back
+  // side straight into redraw; if you just drew it correctly, you don't
+  // need to immediately redo it.
+  const revealedViaDraw = useRef(false);
   useEffect(() => {
-    // Revealing a hanzi card should start the back side already in redraw
-    // mode (blank, ready to trace) rather than showing the filled-in
-    // preview first and requiring an extra R press to clear it.
-    setRedoDrawing(revealed && current?.source === "hanzi");
+    revealedViaDraw.current = false;
+  }, [current?.id]);
+  useEffect(() => {
+    // Revealing a hanzi card (via Show Answer/Space, not a successful draw)
+    // should start the back side already in redraw mode (blank, ready to
+    // trace) rather than showing the filled-in preview first and requiring
+    // an extra R press to clear it.
+    setRedoDrawing(revealed && current?.source === "hanzi" && !revealedViaDraw.current);
   }, [revealed, current?.id, current?.source]);
 
   // Warms the browser's cache for the next few upcoming cards' audio and
@@ -1568,7 +1578,10 @@ function ReviewSession({
   const writeCompleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function handleWriteComplete() {
     if (writeCompleteTimer.current) clearTimeout(writeCompleteTimer.current);
-    writeCompleteTimer.current = setTimeout(() => setRevealed(true), 600);
+    writeCompleteTimer.current = setTimeout(() => {
+      revealedViaDraw.current = true;
+      setRevealed(true);
+    }, 600);
   }
   useEffect(() => {
     return () => {
