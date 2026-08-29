@@ -32,6 +32,7 @@ export default function ScreenshotUploadButton() {
   const [pending, setPending] = useState<PendingScreenshot[]>([]);
   const [showPopup, setShowPopup] = useState(false);
   const [viewIndex, setViewIndex] = useState(0);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const touchStartX = useRef<number | null>(null);
 
   async function refreshPending() {
@@ -49,10 +50,12 @@ export default function ScreenshotUploadButton() {
   }, []);
 
   function goTo(delta: number) {
+    setConfirmDeleteId(null);
     setViewIndex((i) => Math.max(0, Math.min(pending.length - 1, i + delta)));
   }
 
   async function handleDelete(id: number) {
+    setConfirmDeleteId(null);
     setPending((prev) => {
       const next = prev.filter((s) => s.id !== id);
       setViewIndex((i) => Math.max(0, Math.min(next.length - 1, i)));
@@ -78,7 +81,7 @@ export default function ScreenshotUploadButton() {
       else if (e.key === "Escape") setShowPopup(false);
       else if (e.key === "Backspace" || e.key === "Delete") {
         const s = pending[viewIndex];
-        if (s) handleDelete(s.id);
+        if (s) setConfirmDeleteId(s.id);
       }
     }
     window.addEventListener("keydown", handleKey);
@@ -157,73 +160,98 @@ export default function ScreenshotUploadButton() {
         pending.length > 0 &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex flex-col bg-black/90" onClick={() => setShowPopup(false)}>
-            <div className="flex items-center justify-between px-4 pt-4 shrink-0" onClick={(e) => e.stopPropagation()}>
-              <span className="text-sm text-white/80 tabular-nums">
-                {viewIndex + 1} / {pending.length}
-              </span>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => handleDelete(pending[viewIndex].id)}
-                  aria-label="Remove screenshot"
-                  title="Remove this screenshot"
-                  className="text-white/70 hover:text-red-400"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                    <path
-                      fillRule="evenodd"
-                      d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-                <button onClick={() => setShowPopup(false)} aria-label="Close" className="text-white/80 hover:text-white">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6">
-                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                  </svg>
-                </button>
-              </div>
-            </div>
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/50" onClick={() => setShowPopup(false)}>
             <div
-              className="flex-1 flex items-center justify-center relative min-h-0 px-4 pb-4"
+              className="w-full max-w-xs rounded-2xl bg-white dark:bg-zinc-900 shadow-2xl overflow-hidden"
               onClick={(e) => e.stopPropagation()}
-              onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX; }}
-              onTouchEnd={(e) => {
-                if (touchStartX.current == null) return;
-                const delta = e.changedTouches[0].clientX - touchStartX.current;
-                if (delta < -50) goTo(1);
-                else if (delta > 50) goTo(-1);
-                touchStartX.current = null;
-              }}
             >
-              {viewIndex > 0 && (
-                <button
-                  onClick={() => goTo(-1)}
-                  aria-label="Previous"
-                  className="absolute left-2 sm:left-4 text-white/70 hover:text-white p-2"
+              <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-200 dark:border-zinc-800">
+                <span className="text-xs text-zinc-500 dark:text-zinc-400 tabular-nums">
+                  {viewIndex + 1} / {pending.length}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setConfirmDeleteId(pending[viewIndex].id)}
+                    aria-label="Remove screenshot"
+                    title="Remove this screenshot"
+                    className="text-zinc-400 hover:text-red-500 p-1"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                      <path
+                        fillRule="evenodd"
+                        d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
+                  <button onClick={() => setShowPopup(false)} aria-label="Close" className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                      <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {confirmDeleteId === pending[viewIndex].id ? (
+                <div className="flex flex-col items-center justify-center gap-3 aspect-square px-6">
+                  <p className="text-sm text-center text-zinc-700 dark:text-zinc-300">Remove this screenshot?</p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setConfirmDeleteId(null)}
+                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => handleDelete(pending[viewIndex].id)}
+                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-white bg-red-500 hover:bg-red-600"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className="relative flex items-center justify-center bg-zinc-100 dark:bg-zinc-950 aspect-square"
+                  onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX; }}
+                  onTouchEnd={(e) => {
+                    if (touchStartX.current == null) return;
+                    const delta = e.changedTouches[0].clientX - touchStartX.current;
+                    if (delta < -50) goTo(1);
+                    else if (delta > 50) goTo(-1);
+                    touchStartX.current = null;
+                  }}
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-7 h-7">
-                    <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
-                  </svg>
-                </button>
-              )}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={pending[viewIndex].image_url}
-                alt=""
-                className="max-w-full max-h-full object-contain rounded-lg select-none"
-                draggable={false}
-              />
-              {viewIndex < pending.length - 1 && (
-                <button
-                  onClick={() => goTo(1)}
-                  aria-label="Next"
-                  className="absolute right-2 sm:right-4 text-white/70 hover:text-white p-2"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-7 h-7">
-                    <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
-                  </svg>
-                </button>
+                  {viewIndex > 0 && (
+                    <button
+                      onClick={() => goTo(-1)}
+                      aria-label="Previous"
+                      className="absolute left-1 text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-white p-1"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6">
+                        <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  )}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={pending[viewIndex].image_url}
+                    alt=""
+                    className="max-w-full max-h-full object-contain select-none"
+                    draggable={false}
+                  />
+                  {viewIndex < pending.length - 1 && (
+                    <button
+                      onClick={() => goTo(1)}
+                      aria-label="Next"
+                      className="absolute right-1 text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-white p-1"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6">
+                        <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>,
