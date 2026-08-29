@@ -31,6 +31,8 @@ export default function ScreenshotUploadButton() {
   const [uploading, setUploading] = useState<{ done: number; total: number; failed: number } | null>(null);
   const [pending, setPending] = useState<PendingScreenshot[]>([]);
   const [showPopup, setShowPopup] = useState(false);
+  const [viewIndex, setViewIndex] = useState(0);
+  const touchStartX = useRef<number | null>(null);
 
   async function refreshPending() {
     try {
@@ -45,6 +47,22 @@ export default function ScreenshotUploadButton() {
   useEffect(() => {
     refreshPending();
   }, []);
+
+  function goTo(delta: number) {
+    setViewIndex((i) => Math.max(0, Math.min(pending.length - 1, i + delta)));
+  }
+
+  useEffect(() => {
+    if (!showPopup) return;
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "ArrowRight") goTo(1);
+      else if (e.key === "ArrowLeft") goTo(-1);
+      else if (e.key === "Escape") setShowPopup(false);
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showPopup, pending.length]);
 
   async function handleSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
@@ -103,7 +121,10 @@ export default function ScreenshotUploadButton() {
 
       {!uploading && pending.length > 0 && (
         <button
-          onClick={() => setShowPopup(true)}
+          onClick={() => {
+            setViewIndex(0);
+            setShowPopup(true);
+          }}
           className="text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 underline decoration-dotted transition-colors"
         >
           {pending.length} uploaded
@@ -111,38 +132,61 @@ export default function ScreenshotUploadButton() {
       )}
 
       {showPopup &&
+        pending.length > 0 &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40" onClick={() => setShowPopup(false)}>
+          <div className="fixed inset-0 z-[9999] flex flex-col bg-black/90" onClick={() => setShowPopup(false)}>
+            <div className="flex items-center justify-between px-4 pt-4 shrink-0" onClick={(e) => e.stopPropagation()}>
+              <span className="text-sm text-white/80 tabular-nums">
+                {viewIndex + 1} / {pending.length}
+              </span>
+              <button onClick={() => setShowPopup(false)} aria-label="Close" className="text-white/80 hover:text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6">
+                  <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                </svg>
+              </button>
+            </div>
             <div
-              className="w-full max-w-lg max-h-[80vh] overflow-y-auto rounded-2xl bg-white dark:bg-zinc-900 shadow-2xl p-4"
+              className="flex-1 flex items-center justify-center relative min-h-0 px-4 pb-4"
               onClick={(e) => e.stopPropagation()}
+              onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX; }}
+              onTouchEnd={(e) => {
+                if (touchStartX.current == null) return;
+                const delta = e.changedTouches[0].clientX - touchStartX.current;
+                if (delta < -50) goTo(1);
+                else if (delta > 50) goTo(-1);
+                touchStartX.current = null;
+              }}
             >
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                  {pending.length} screenshot{pending.length === 1 ? "" : "s"} waiting to be processed tonight
-                </h3>
+              {viewIndex > 0 && (
                 <button
-                  onClick={() => setShowPopup(false)}
-                  aria-label="Close"
-                  className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300"
+                  onClick={() => goTo(-1)}
+                  aria-label="Previous"
+                  className="absolute left-2 sm:left-4 text-white/70 hover:text-white p-2"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
-                    <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-7 h-7">
+                    <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
                   </svg>
                 </button>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {pending.map((s) => (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    key={s.id}
-                    src={s.image_url}
-                    alt=""
-                    className="w-full aspect-square object-cover rounded-lg border border-zinc-200 dark:border-zinc-700"
-                  />
-                ))}
-              </div>
+              )}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={pending[viewIndex].image_url}
+                alt=""
+                className="max-w-full max-h-full object-contain rounded-lg select-none"
+                draggable={false}
+              />
+              {viewIndex < pending.length - 1 && (
+                <button
+                  onClick={() => goTo(1)}
+                  aria-label="Next"
+                  className="absolute right-2 sm:right-4 text-white/70 hover:text-white p-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-7 h-7">
+                    <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+                  </svg>
+                </button>
+              )}
             </div>
           </div>,
           document.body
