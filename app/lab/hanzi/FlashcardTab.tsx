@@ -2383,34 +2383,39 @@ export default function FlashcardTab({
   if (overviewFor && !selectedDeck) {
     const d = decks.find((deck) => deck.key === overviewFor);
     return (
-      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-6">
-        <div className="flex items-center gap-2">
+      <div className="fixed inset-0 z-30 flex flex-col overflow-hidden bg-zinc-100 dark:bg-zinc-950 px-4 sm:px-8 pt-4 sm:pt-8">
+        <div className="w-full shrink-0">
+          <button
+            onClick={() => setOverviewFor(null)}
+            className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+          >
+            ← Decks
+          </button>
+        </div>
+        <div className="flex-1 flex flex-col items-center justify-center gap-6">
           <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-100">{DECK_LABELS[overviewFor]}</h2>
+          <div className="space-y-2 text-base">
+            <p className="flex items-center justify-between gap-8">
+              <span className="text-zinc-600 dark:text-zinc-300">New:</span>
+              <span className="font-semibold tabular-nums text-blue-500 dark:text-blue-400">{d?.newCount ?? 0}</span>
+            </p>
+            <p className="flex items-center justify-between gap-8">
+              <span className="text-zinc-600 dark:text-zinc-300">Learning:</span>
+              <span className="font-semibold tabular-nums text-red-500 dark:text-red-400">{d?.learnCount ?? 0}</span>
+            </p>
+            <p className="flex items-center justify-between gap-8">
+              <span className="text-zinc-600 dark:text-zinc-300">To Review:</span>
+              <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-500">{d?.dueCount ?? 0}</span>
+            </p>
+          </div>
+          <button
+            onClick={() => setSelectedDeck(overviewFor)}
+            className="rounded-lg bg-zinc-800 dark:bg-zinc-200 px-6 py-2.5 text-sm font-medium text-white dark:text-zinc-900"
+          >
+            Study Now
+          </button>
           {overviewFor === "random_words" && <ScreenshotUploadButton />}
         </div>
-        <div className="space-y-2 text-base">
-          <p className="flex items-center justify-between gap-8">
-            <span className="text-zinc-600 dark:text-zinc-300">New:</span>
-            <span className="font-semibold tabular-nums text-blue-500 dark:text-blue-400">{d?.newCount ?? 0}</span>
-          </p>
-          <p className="flex items-center justify-between gap-8">
-            <span className="text-zinc-600 dark:text-zinc-300">Learning:</span>
-            <span className="font-semibold tabular-nums text-red-500 dark:text-red-400">{d?.learnCount ?? 0}</span>
-          </p>
-          <p className="flex items-center justify-between gap-8">
-            <span className="text-zinc-600 dark:text-zinc-300">To Review:</span>
-            <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-500">{d?.dueCount ?? 0}</span>
-          </p>
-        </div>
-        <button
-          onClick={() => setSelectedDeck(overviewFor)}
-          className="rounded-lg bg-zinc-800 dark:bg-zinc-200 px-6 py-2.5 text-sm font-medium text-white dark:text-zinc-900"
-        >
-          Study Now
-        </button>
-        <button onClick={() => setOverviewFor(null)} className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">
-          ← Decks
-        </button>
       </div>
     );
   }
