@@ -2440,7 +2440,8 @@ export default function FlashcardTab({
           >
             Study Now
           </button>
-          {overviewFor === "random_words" && <ScreenshotUploadButton />}
+          {overviewFor === "random_words" && <ScreenshotUploadButton targetSource="random_words" />}
+          {overviewFor === "idioms" && <ScreenshotUploadButton targetSource="idioms" />}
         </div>
       </div>
     );

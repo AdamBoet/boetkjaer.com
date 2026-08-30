@@ -24,9 +24,11 @@ function fileToBase64(file: File): Promise<string> {
 
 // Compact icon-button version of a screenshot uploader — dumps dictionary-
 // lookup screenshots into screenshot_queue for the nightly job to turn into
-// random_words cards (see daily_refresh.py's process_screenshot_queue).
-// No page of its own; lives directly on random_words' deck-overview screen.
-export default function ScreenshotUploadButton() {
+// words_phrases cards (see daily_refresh.py's process_screenshot_queue).
+// No page of its own; lives directly on a deck-overview screen. targetSource
+// picks which deck the screenshot is destined for (random_words vs idioms)
+// — each instance only sees/uploads to its own queue.
+export default function ScreenshotUploadButton({ targetSource }: { targetSource: "random_words" | "idioms" }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState<{ done: number; total: number; failed: number } | null>(null);
   const [pending, setPending] = useState<PendingScreenshot[]>([]);
@@ -37,7 +39,7 @@ export default function ScreenshotUploadButton() {
 
   async function refreshPending() {
     try {
-      const res = await fetch("/api/upload-screenshot");
+      const res = await fetch(`/api/upload-screenshot?targetSource=${targetSource}`);
       const data = await res.json();
       setPending(data.screenshots ?? []);
     } catch {
@@ -47,7 +49,8 @@ export default function ScreenshotUploadButton() {
 
   useEffect(() => {
     refreshPending();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetSource]);
 
   function goTo(delta: number) {
     setConfirmDeleteId(null);
@@ -105,7 +108,7 @@ export default function ScreenshotUploadButton() {
         const res = await fetch("/api/upload-screenshot", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: file.name, contentType: file.type, contentBase64 }),
+          body: JSON.stringify({ filename: file.name, contentType: file.type, contentBase64, targetSource }),
         });
         if (!res.ok) throw new Error();
         done += 1;
