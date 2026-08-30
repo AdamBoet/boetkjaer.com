@@ -578,12 +578,10 @@ function CountCell({ value, color }: { value: number | null; color: string }) {
 
 function DeckSettingsPopover({
   deckKey,
-  anchor,
   onClose,
   onSave,
 }: {
   deckKey: DeckKey;
-  anchor: { top: number; right: number };
   onClose: () => void;
   onSave: (settings: {
     maxReviews: number;
@@ -598,24 +596,12 @@ function DeckSettingsPopover({
   const [wordCount, setWordCount] = useState(() => loadWordCount(deckKey));
   const [sentenceMaxChars, setSentenceMaxChars] = useState(() => loadSentenceMaxChars(deckKey));
   const [voice, setVoice] = useState(() => loadVoice(deckKey));
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [onClose]);
 
   return (
-    <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
+    <div className="fixed inset-0 z-40 bg-black/20 flex items-center justify-center px-4" onClick={onClose}>
       <div
-        ref={ref}
         onClick={(e) => e.stopPropagation()}
-        style={{ position: "fixed", top: anchor.top, right: anchor.right }}
-        className="z-50 w-64 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl p-4 space-y-3"
+        className="w-full max-w-xs max-h-[85vh] overflow-y-auto rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl p-4 space-y-3"
       >
         <p className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">Session limits</p>
         <label className="block space-y-1">
@@ -698,7 +684,7 @@ function DeckSettingsPopover({
           Save
         </button>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -710,7 +696,6 @@ function DeckMenu({
   onSelect: (key: DeckKey) => void;
 }) {
   const [settingsOpenFor, setSettingsOpenFor] = useState<DeckKey | null>(null);
-  const [anchor, setAnchor] = useState({ top: 0, right: 0 });
   const [expanded, setExpanded] = useState(true);
   const [, forceRerender] = useState(0);
 
@@ -773,11 +758,7 @@ function DeckMenu({
               <CountCell value={d.learnCount} color="text-red-500 dark:text-red-400" />
               <CountCell value={d.dueCount} color="text-emerald-600 dark:text-emerald-500" />
               <button
-                onClick={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  setAnchor({ top: rect.bottom + 6, right: window.innerWidth - rect.right });
-                  setSettingsOpenFor((k) => (k === d.key ? null : d.key));
-                }}
+                onClick={() => setSettingsOpenFor((k) => (k === d.key ? null : d.key))}
                 className={`justify-self-end rounded-md p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-opacity ${
                   settingsOpenFor === d.key ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
                 }`}
@@ -791,7 +772,6 @@ function DeckMenu({
             {settingsOpenFor === d.key && (
               <DeckSettingsPopover
                 deckKey={d.key}
-                anchor={anchor}
                 onClose={() => setSettingsOpenFor(null)}
                 onSave={({ maxReviews, newCards, wordCount, sentenceMaxChars, voice }) => {
                   localStorage.setItem(maxReviewsKey(d.key), String(maxReviews));
