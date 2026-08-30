@@ -466,7 +466,11 @@ function interleave<T>(due: T[], newOnes: T[]): T[] {
   const step = bodyLength / newOnes.length;
   const out: T[] = [];
   let newIdx = 0;
-  let nextInsertAt = step;
+  // Starting the first insertion point at half a step (rather than a full
+  // step) brings the first new card in quickly, while every later one still
+  // lands a full `step` after the previous — same even spacing throughout,
+  // just shifted earlier so the wait isn't front-loaded onto card one.
+  let nextInsertAt = step / 2;
   for (let i = 0; i < bodyLength; i++) {
     out.push(due[i]);
     if (newIdx < newOnes.length && i + 1 >= nextInsertAt) {
