@@ -1,0 +1,10 @@
+{
+  "name": "hanzi-cn-lookup-tools",
+  "version": "1.0.0",
+  "description": "Local lookup helper for the 汉字 Anki deck research workflow (pronunciations, decomposition, examples, frequency rank).",
+  "private": true,
+  "main": "hanzi_lookup.js",
+  "dependencies": {
+    "hanzi": "^2.1.5"
+  }
+}
