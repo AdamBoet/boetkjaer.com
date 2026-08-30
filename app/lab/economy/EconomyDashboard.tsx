@@ -17,6 +17,21 @@ function formatShortDate(iso: string) {
   return new Date(`${iso}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
+function currentMonthKeyNow() {
+  return todayISO().slice(0, 7);
+}
+
+function shiftMonthKey(monthKey: string, delta: number) {
+  const [y, m] = monthKey.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthKeyLabel(monthKey: string) {
+  const [y, m] = monthKey.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+}
+
 function toneClass(type: EntryType) {
   return type === "expense" ? "text-red-500 dark:text-red-400" : "text-emerald-700 dark:text-emerald-500";
 }
@@ -178,6 +193,7 @@ export default function EconomyDashboard({
   const [recurring, setRecurring] = useState(initialRecurring);
   const [categories, setCategories] = useState(initialCategories);
   const [error, setError] = useState<string | null>(null);
+  const [selectedMonth, setSelectedMonth] = useState(currentMonthKeyNow());
 
   useEffect(() => {
     if (!error) return;
@@ -240,9 +256,12 @@ export default function EconomyDashboard({
     a.type !== b.type ? (a.type === "expense" ? -1 : 1) : b.amount - a.amount
   );
 
-  const currentMonthKey = todayISO().slice(0, 7);
-  const currentMonthTransactions = transactions.filter(t => t.occurred_on.startsWith(currentMonthKey));
-  const currentMonthLabel = new Date().toLocaleDateString("en-GB", { month: "long" });
+  const currentMonthTransactions = transactions.filter(t => t.occurred_on.startsWith(selectedMonth));
+  const currentMonthLabel = monthKeyLabel(selectedMonth);
+  const isCurrentMonth = selectedMonth === currentMonthKeyNow();
+  const sortedCurrentMonthTransactions = [...currentMonthTransactions].sort((a, b) =>
+    a.occurred_on === b.occurred_on ? b.id - a.id : b.occurred_on.localeCompare(a.occurred_on)
+  );
 
   const totalSpending = currentMonthTransactions.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
   const totalEarnings = currentMonthTransactions.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
@@ -490,8 +509,30 @@ export default function EconomyDashboard({
 
   return (
     <div className="max-w-5xl flex flex-col gap-8">
-      <div>
+      <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Economy</h1>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setSelectedMonth(m => shiftMonthKey(m, -1))}
+            aria-label="Previous month"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-lg text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+          >
+            ‹
+          </button>
+          <span className="text-sm font-medium text-zinc-600 dark:text-zinc-300 w-32 text-center">
+            {currentMonthLabel}
+          </span>
+          <button
+            type="button"
+            onClick={() => setSelectedMonth(m => shiftMonthKey(m, 1))}
+            disabled={isCurrentMonth}
+            aria-label="Next month"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-lg text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-30 disabled:pointer-events-none"
+          >
+            ›
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -502,7 +543,7 @@ export default function EconomyDashboard({
 
       <div className="order-2 sm:order-1 grid grid-cols-1 sm:grid-cols-[1fr_1.3fr] gap-3">
         <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-6">
-          <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">Net · {currentMonthLabel}</p>
+          <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">Net</p>
           <p className={`text-5xl font-bold ${net < 0 ? "text-red-500 dark:text-red-400" : "text-emerald-700 dark:text-emerald-500"}`}>
             {fmt(net)}
           </p>
@@ -519,7 +560,7 @@ export default function EconomyDashboard({
         </div>
 
         <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-6 flex flex-col">
-          <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-3">Spending by category · {currentMonthLabel}</p>
+          <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-3">Spending by category</p>
           <CategoryDonut segments={donutSegments} centerLabel={fmt(totalSpending)} />
         </div>
       </div>
@@ -605,10 +646,10 @@ export default function EconomyDashboard({
         <h2 className="text-sm font-medium text-zinc-600 dark:text-zinc-300">Transactions</h2>
 
         <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-          {transactions.length === 0 && (
+          {sortedCurrentMonthTransactions.length === 0 && (
             <p className="text-sm text-zinc-400 dark:text-zinc-500 py-3">No transactions logged yet.</p>
           )}
-          {transactions.map(t =>
+          {sortedCurrentMonthTransactions.map(t =>
             editingTxId === t.id ? (
               <div key={t.id} className="flex flex-wrap items-center gap-2 py-2.5">
                 <select
