@@ -456,11 +456,18 @@ function pinyinFrontHeadline(sub: string, back: string): string {
 function interleave<T>(due: T[], newOnes: T[]): T[] {
   if (newOnes.length === 0) return due;
   if (due.length === 0) return newOnes;
-  const step = due.length / newOnes.length;
+  // Reserve a few due cards at the end that never get a new card inserted
+  // after them. Spacing purely by due.length/newOnes.length put the *last*
+  // new card's insertion point right at due.length by construction, so it
+  // was almost always literally the final card of the session — graded
+  // once, then nothing left to reinforce it before the session ended.
+  const tailBuffer = Math.min(3, Math.floor(due.length / 2));
+  const bodyLength = due.length - tailBuffer;
+  const step = bodyLength / newOnes.length;
   const out: T[] = [];
   let newIdx = 0;
   let nextInsertAt = step;
-  for (let i = 0; i < due.length; i++) {
+  for (let i = 0; i < bodyLength; i++) {
     out.push(due[i]);
     if (newIdx < newOnes.length && i + 1 >= nextInsertAt) {
       out.push(newOnes[newIdx++]);
@@ -468,6 +475,7 @@ function interleave<T>(due: T[], newOnes: T[]): T[] {
     }
   }
   while (newIdx < newOnes.length) out.push(newOnes[newIdx++]);
+  for (let i = bodyLength; i < due.length; i++) out.push(due[i]);
   return out;
 }
 
