@@ -555,14 +555,23 @@ def pick_example_words(character: str, count: int = 3, pronunciation: str = "") 
     # Proper-noun definitions are often long descriptive glosses rather than
     # a plain word/phrase meaning — e.g. 成都's is "Chengdu subprovincial
     # city and capital of Sichuan province 四川 in southwest China". Cut at
-    # the first comma (the common "Name, description" pattern), else fall
-    # back to just the leading capitalized-word run (the actual name).
-    # Self-limiting: an ordinary lowercase-starting meaning passes through
-    # unchanged either way.
-    def clean_meaning(meaning: str) -> str:
+    # the first comma/colon/semicolon (the common "Name, description" or
+    # "name: description" pattern), else fall back to just the leading
+    # capitalized-word run (the actual name). Unlike a comma, that cut point
+    # can itself still be long (e.g. 唐僧's "Xuanzang, Tang dynasty Buddhist
+    # monk and translator, who traveled..." is 7 words before the second
+    # comma) — so the word-count cap below always applies, even after
+    # cutting, not just on the uncut fallback path. Self-limiting: an
+    # ordinary short lowercase-starting meaning passes through unchanged.
+    # If nothing short survives, return None — the caller drops this word as
+    # a candidate rather than show a run-on definition; a different (often
+    # more common) example word will be picked instead.
+    def clean_meaning(meaning: str) -> str | None:
         meaning = strip_parens(meaning)
-        if "," in meaning:
-            return meaning.split(",")[0].strip()
+        for sep in (",", ":", ";"):
+            if sep in meaning:
+                meaning = meaning.split(sep)[0].strip()
+                break
         words = meaning.split()
         if len(words) <= 4:
             return meaning
@@ -572,7 +581,20 @@ def pick_example_words(character: str, count: int = 3, pronunciation: str = "") 
                 name_words.append(w)
             else:
                 break
-        return " ".join(name_words) if name_words else meaning
+        return " ".join(name_words) if name_words else None
+
+    # A CC-CEDICT entry's first "/"-separated sense is sometimes the long
+    # descriptive one while a later sense is short and plain (e.g. 眼神's
+    # first sense is "expression or emotion showing in one's eyes" but its
+    # second is just "meaningful glance"; 下酒's second sense "to down one's
+    # drink" beats its first). Try senses in order and use the first one
+    # clean_meaning can shorten, instead of giving up after the first.
+    def first_clean_sense(definition: str) -> str | None:
+        for sense in definition.split("/"):
+            cleaned = clean_meaning(sense.strip())
+            if cleaned is not None:
+                return cleaned
+        return None
 
     def tier_words(tier: str, allow_proper: bool = False) -> list[tuple[str, str, str]]:
         # Low tier for a common character is overwhelmingly place/name
@@ -582,13 +604,19 @@ def pick_example_words(character: str, count: int = 3, pronunciation: str = "") 
         # slot when they come from high/medium tier; low tier stays
         # non-proper-noun only regardless of allow_proper.
         proper_ok = allow_proper and tier != "low"
-        return [
-            (item["simplified"], clean_meaning(item["definition"].split("/")[0].strip()), item["pinyin"])
-            for item in data.get("examples", {}).get(tier, [])
-            if item["simplified"] != character
-            and (proper_ok or not item["pinyin"][:1].isupper())
-            and not any(marker in item["definition"] for marker in _RARITY_MARKERS)
-        ]
+        result = []
+        for item in data.get("examples", {}).get(tier, []):
+            if item["simplified"] == character:
+                continue
+            if not (proper_ok or not item["pinyin"][:1].isupper()):
+                continue
+            if any(marker in item["definition"] for marker in _RARITY_MARKERS):
+                continue
+            meaning = first_clean_sense(item["definition"])
+            if meaning is None:
+                continue
+            result.append((item["simplified"], meaning, item["pinyin"]))
+        return result
 
     def char_reading(word: str, word_pinyin: str) -> str | None:
         idx = word.find(character)
