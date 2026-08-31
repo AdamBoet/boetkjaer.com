@@ -43,7 +43,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(__file__))
-from create_card import sb_select, sb_request, upload_media, ENV, _CJK_RE, _SSL_CTX, next_negative_note_id  # noqa: E402
+from create_card import sb_select, sb_insert, sb_request, upload_media, ENV, _CJK_RE, _SSL_CTX, next_negative_note_id  # noqa: E402
 
 from llama_cpp import Llama
 from kokoro import KPipeline
@@ -1419,9 +1419,35 @@ def main():
             steps_crashed.append(name)
             return default
 
+    # A heartbeat row, independent of --notify — a Vercel cron watchdog
+    # (/api/pipeline-watchdog) checks this table to catch the case this
+    # script can never report on its own: it never even started (Mac
+    # asleep/off/dead battery, launchd never fired, a broken venv). Best
+    # effort on both ends — a Supabase hiccup here must never abort the
+    # actual refresh work.
+    run_id = None
+    try:
+        run_id = sb_insert("pipeline_runs", {})[0]["id"]
+    except Exception as e:
+        print(f"  (failed to record run start: {e})")
+
+    def update_run(status: str, summary: str | None = None):
+        if run_id is None:
+            return
+        try:
+            patch = {"status": status}
+            if summary is not None:
+                patch["summary"] = summary
+            if status != "running":
+                patch["completed_at"] = datetime.now(timezone.utc).isoformat()
+            sb_request("PATCH", f"/rest/v1/pipeline_runs?id=eq.{run_id}", body=patch)
+        except Exception as e:
+            print(f"  (failed to update run heartbeat: {e})")
+
     try:
         settings = load_settings()
     except BaseException:
+        update_run("crashed", "Couldn't even load settings.")
         if args.notify:
             try:
                 send_notification("Card update failed", "The daily card update couldn't even load settings.")
@@ -1442,23 +1468,26 @@ def main():
         hsk3_failed + wp_failed + hanzi_failed + screenshot_failed
         + hsk3_add_failed + hanzi_add_failed
     )
+    added_bits = []
+    if hanzi_added:
+        added_bits.append(f"+{hanzi_added} hanzi")
+    if hsk3_added:
+        added_bits.append(f"+{hsk3_added} hsk3")
+    parts = []
+    if added_bits:
+        parts.append("added " + ", ".join(added_bits))
+    parts.append(f"{total_ok} updated")
+    parts.append(f"{total_due} due")
+    if total_failed:
+        parts.append(f"{total_failed} failed")
+    if steps_crashed:
+        parts.append(f"crashed: {', '.join(steps_crashed)}")
+    summary = " · ".join(parts)
+    update_run("issues" if (total_failed or steps_crashed) else "ok", summary)
+
     if args.notify:
-        added_bits = []
-        if hanzi_added:
-            added_bits.append(f"+{hanzi_added} hanzi")
-        if hsk3_added:
-            added_bits.append(f"+{hsk3_added} hsk3")
-        parts = []
-        if added_bits:
-            parts.append("added " + ", ".join(added_bits))
-        parts.append(f"{total_ok} updated")
-        parts.append(f"{total_due} due")
-        if total_failed:
-            parts.append(f"{total_failed} failed")
-        if steps_crashed:
-            parts.append(f"crashed: {', '.join(steps_crashed)}")
         title = "Daily card update" if not total_failed and not steps_crashed else "Daily card update (with issues)"
-        send_notification(title, " · ".join(parts))
+        send_notification(title, summary)
 
 
 if __name__ == "__main__":
