@@ -201,14 +201,18 @@ export default function EconomyDashboard({
     return () => clearTimeout(t);
   }, [error]);
 
-  const [txCategory, setTxCategory] = useState(initialCategories[0]?.name ?? "");
+  const [txCategory, setTxCategory] = useState(
+    initialCategories.find(c => c.name === "Groceries")?.name ?? initialCategories[0]?.name ?? ""
+  );
   const [txAmount, setTxAmount] = useState("");
+  const [txMerchant, setTxMerchant] = useState("");
   const [txType, setTxType] = useState<EntryType>("expense");
   const [txSubmitting, setTxSubmitting] = useState(false);
 
   const [editingTxId, setEditingTxId] = useState<number | null>(null);
   const [editTxCategory, setEditTxCategory] = useState("");
   const [editTxAmount, setEditTxAmount] = useState("");
+  const [editTxMerchant, setEditTxMerchant] = useState("");
   const [editTxType, setEditTxType] = useState<EntryType>("expense");
   const [editTxSubmitting, setEditTxSubmitting] = useState(false);
 
@@ -320,12 +324,19 @@ export default function EconomyDashboard({
       const res = await fetch("/api/economy/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: txCategory, amount, type: txType, occurred_on: todayISO() }),
+        body: JSON.stringify({
+          description: txCategory,
+          merchant: txMerchant.trim() || null,
+          amount,
+          type: txType,
+          occurred_on: todayISO(),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to add transaction");
       setTransactions(prev => sortTransactions([...prev, data.transaction]));
       setTxAmount("");
+      setTxMerchant("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add transaction");
     } finally {
@@ -347,6 +358,7 @@ export default function EconomyDashboard({
     setEditingTxId(t.id);
     setEditTxCategory(t.description);
     setEditTxAmount(String(t.amount));
+    setEditTxMerchant(t.merchant ?? "");
     setEditTxType(t.type);
   }
 
@@ -361,7 +373,12 @@ export default function EconomyDashboard({
       const res = await fetch(`/api/economy/transactions/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: editTxCategory, amount, type: editTxType }),
+        body: JSON.stringify({
+          description: editTxCategory,
+          merchant: editTxMerchant.trim() || null,
+          amount,
+          type: editTxType,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to update transaction");
@@ -611,7 +628,7 @@ export default function EconomyDashboard({
         <form onSubmit={addTransaction} className="flex flex-wrap items-end gap-2">
           <div className="w-24">
             <label className="block text-xs text-zinc-400 dark:text-zinc-500 mb-1">Amount</label>
-            <AmountInput value={txAmount} onChange={setTxAmount} placeholder="150" />
+            <AmountInput value={txAmount} onChange={setTxAmount} />
           </div>
           <div className="flex-1 min-w-[8rem]">
             <label className="block text-xs text-zinc-400 dark:text-zinc-500 mb-1">Category</label>
@@ -630,6 +647,16 @@ export default function EconomyDashboard({
                 ))}
               </select>
             )}
+          </div>
+          <div className="flex-1 min-w-[8rem]">
+            <label className="block text-xs text-zinc-400 dark:text-zinc-500 mb-1">Merchant (optional)</label>
+            <input
+              type="text"
+              value={txMerchant}
+              onChange={e => setTxMerchant(e.target.value)}
+              placeholder="Netto, Jacob, ..."
+              className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-transparent px-3 py-1.5 text-sm"
+            />
           </div>
           <TypeToggle value={txType} onChange={setTxType} />
           <button
@@ -666,6 +693,13 @@ export default function EconomyDashboard({
                 <div className="w-24">
                   <AmountInput value={editTxAmount} onChange={setEditTxAmount} dense />
                 </div>
+                <input
+                  type="text"
+                  value={editTxMerchant}
+                  onChange={e => setEditTxMerchant(e.target.value)}
+                  placeholder="Merchant"
+                  className="flex-1 min-w-[6rem] rounded-lg border border-zinc-200 dark:border-zinc-800 bg-transparent px-2 py-1 text-sm"
+                />
                 <TypeToggle value={editTxType} onChange={setEditTxType} />
                 <button
                   onClick={() => saveEditTx(t.id)}
@@ -686,7 +720,10 @@ export default function EconomyDashboard({
                 <span className="w-16 text-xs text-zinc-400 dark:text-zinc-500 tabular-nums">
                   {formatShortDate(t.occurred_on)}
                 </span>
-                <span className="flex-1 min-w-0 truncate text-sm text-zinc-700 dark:text-zinc-300">{t.description}</span>
+                <span className="flex-1 min-w-0 truncate text-sm text-zinc-700 dark:text-zinc-300">
+                  {t.description}
+                  {t.merchant && <span className="text-zinc-400 dark:text-zinc-500"> · {t.merchant}</span>}
+                </span>
                 <span className={`text-sm font-medium tabular-nums ${toneClass(t.type)}`}>
                   {t.type === "expense" ? "−" : "+"}
                   {fmt(t.amount)}

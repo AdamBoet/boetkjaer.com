@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-server";
 
 export async function POST(req: NextRequest) {
-  const { description, amount, type, occurred_on } = await req.json();
+  const { description, merchant, amount, type, occurred_on } = await req.json();
 
   if (typeof description !== "string" || !description.trim()) {
     return NextResponse.json({ error: "description is required" }, { status: 400 });
@@ -16,10 +16,13 @@ export async function POST(req: NextRequest) {
   if (typeof occurred_on !== "string" || Number.isNaN(Date.parse(occurred_on))) {
     return NextResponse.json({ error: "occurred_on must be a valid date" }, { status: 400 });
   }
+  if (merchant != null && typeof merchant !== "string") {
+    return NextResponse.json({ error: "merchant must be a string or null" }, { status: 400 });
+  }
 
   const { data, error } = await supabaseAdmin
     .from("economy_transactions")
-    .insert({ description: description.trim(), amount, type, occurred_on })
+    .insert({ description: description.trim(), merchant: merchant?.trim() || null, amount, type, occurred_on })
     .select()
     .single();
 

@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase-server";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { description, amount, type } = await req.json();
+  const { description, merchant, amount, type } = await req.json();
 
   if (typeof description !== "string" || !description.trim()) {
     return NextResponse.json({ error: "description is required" }, { status: 400 });
@@ -14,10 +14,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (type !== "expense" && type !== "income") {
     return NextResponse.json({ error: "type must be 'expense' or 'income'" }, { status: 400 });
   }
+  if (merchant != null && typeof merchant !== "string") {
+    return NextResponse.json({ error: "merchant must be a string or null" }, { status: 400 });
+  }
 
   const { data, error } = await supabaseAdmin
     .from("economy_transactions")
-    .update({ description: description.trim(), amount, type })
+    .update({ description: description.trim(), merchant: merchant?.trim() || null, amount, type })
     .eq("id", id)
     .select()
     .single();
