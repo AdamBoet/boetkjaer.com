@@ -182,6 +182,23 @@ def _word_present(word: str, sentence: str) -> bool:
     return False
 
 
+_LATIN_RE = re.compile(r"[a-zA-Z]")
+
+
+def _echoes_meaning(sentence: str) -> bool:
+    """_word_present() only checks that the target word shows up — it can't
+    tell a real sentence from the model gluing the word onto its own raw
+    English meaning gloss instead of writing one (e.g. 输入's meaning
+    "input; enter; import" reproduced verbatim as
+    '输入"input"; enter; import。'), which trivially passes the word check
+    while being nonsense. A real Chinese sentence is overwhelmingly CJK
+    characters; a gloss dump is overwhelmingly Latin letters. A legitimate
+    loanword (APP, GPS) only ever accounts for a small slice of a real
+    sentence's length, so this only trips on a near-total echo."""
+    letters = _LATIN_RE.findall(sentence)
+    return len(letters) > 6 and len(letters) > len(sentence) * 0.3
+
+
 def generate_sentence(word: str, meaning: str, max_chars: int = DEFAULT_SETTINGS["sentence_max_chars"]) -> str:
     prompt = (
         f"请用一个简短自然的中文句子造句，句子中必须逐字包含\"{word}\"这{len(word)}个字，"
@@ -212,16 +229,20 @@ def generate_sentence(word: str, meaning: str, max_chars: int = DEFAULT_SETTINGS
             repeat_penalty=1.3,
         )
         sentence = out["choices"][0]["message"]["content"].strip()
-        if _word_present(word, sentence):
+        if _word_present(word, sentence) and not _echoes_meaning(sentence):
             return sentence
         messages.append({"role": "assistant", "content": sentence})
-        messages.append({
-            "role": "user",
-            "content": (
+        if not _word_present(word, sentence):
+            correction = (
                 f"你写的是\"{sentence}\"——这句话里没有\"{word}\"这{len(word)}个字，你用了别的词代替。"
                 f"请重新写一句话，句子中必须一字不差地包含\"{word}\"，不要用同义词或相近的词。"
-            ),
-        })
+            )
+        else:
+            correction = (
+                f"你写的是\"{sentence}\"——你只是把这个词的英文意思抄了一遍，不是一句真正的中文句子。"
+                f"请写一句自然的中文句子，句子中包含\"{word}\"，不要出现任何英文单词、引号或分号。"
+            )
+        messages.append({"role": "user", "content": correction})
     raise ValueError(f"sentence never included the word {word!r} after {SENTENCE_WORD_CHECK_ATTEMPTS} attempts: {sentence!r}")
 
 
@@ -1410,6 +1431,7 @@ def main():
     # other step still runs, so the final notification always reflects real
     # totals instead of an all-or-nothing pass/fail.
     steps_crashed = []
+    run_started = datetime.now(timezone.utc)
 
     def run_step(name, fn, default):
         try:
@@ -1482,6 +1504,8 @@ def main():
         parts.append(f"{total_failed} failed")
     if steps_crashed:
         parts.append(f"crashed: {', '.join(steps_crashed)}")
+    elapsed_min = round((datetime.now(timezone.utc) - run_started).total_seconds() / 60)
+    parts.append(f"took {elapsed_min}m" if elapsed_min >= 1 else "took <1m")
     summary = " · ".join(parts)
     update_run("issues" if (total_failed or steps_crashed) else "ok", summary)
 
