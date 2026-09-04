@@ -205,7 +205,6 @@ export default function EconomyDashboard({
     initialCategories.find(c => c.name === "Groceries")?.name ?? initialCategories[0]?.name ?? ""
   );
   const [txAmount, setTxAmount] = useState("");
-  const [txMerchant, setTxMerchant] = useState("");
   const [txType, setTxType] = useState<EntryType>("expense");
   const [txSubmitting, setTxSubmitting] = useState(false);
 
@@ -326,7 +325,6 @@ export default function EconomyDashboard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           description: txCategory,
-          merchant: txMerchant.trim() || null,
           amount,
           type: txType,
           occurred_on: todayISO(),
@@ -336,7 +334,6 @@ export default function EconomyDashboard({
       if (!res.ok) throw new Error(data.error ?? "Failed to add transaction");
       setTransactions(prev => sortTransactions([...prev, data.transaction]));
       setTxAmount("");
-      setTxMerchant("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add transaction");
     } finally {
@@ -647,16 +644,6 @@ export default function EconomyDashboard({
                 ))}
               </select>
             )}
-          </div>
-          <div className="flex-1 min-w-[8rem]">
-            <label className="block text-xs text-zinc-400 dark:text-zinc-500 mb-1">Merchant (optional)</label>
-            <input
-              type="text"
-              value={txMerchant}
-              onChange={e => setTxMerchant(e.target.value)}
-              placeholder="Netto, Jacob, ..."
-              className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-transparent px-3 py-1.5 text-sm"
-            />
           </div>
           <TypeToggle value={txType} onChange={setTxType} />
           <button
