@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { supabase, fetchAllRows } from "@/lib/supabase";
 import staticStats from "@/data/anki-stats.json";
 import staticCards from "@/data/hanzi-cards.json";
 import { type HanziCard } from "./CharacterGrid";
@@ -28,36 +28,18 @@ function emptyHsk3Coverage(): Hsk3Coverage {
   return { levels, summary, deck: { total: 0, learned: 0 }, updatedAt: "" };
 }
 
-// Supabase/PostgREST caps a single select() at 1000 rows by default — with
-// 10,900 words, that silently truncated the grid. Page through in batches.
-async function fetchAllHsk3Words(): Promise<(Hsk3Word & { level: string })[]> {
-  const pageSize = 1000;
-  const rows: (Hsk3Word & { level: string })[] = [];
-  for (let from = 0; ; from += pageSize) {
-    const { data, error } = await supabase
-      .from("hsk3_words")
-      .select("*")
-      .order("word")
-      .range(from, from + pageSize - 1);
-    if (error || !data) break;
-    rows.push(...data);
-    if (data.length < pageSize) break;
-  }
-  return rows;
-}
-
 export async function fetchMandarinData() {
-  const [{ data: statsRow }, { data: cardsRows }, { data: hsk3StatsRow }, hsk3WordsRows, { data: wordsPhrasesRows }] = await Promise.all([
+  const [{ data: statsRow }, cardsRows, { data: hsk3StatsRow }, hsk3WordsRows, wordsPhrasesRows] = await Promise.all([
     supabase.from("anki_stats").select("*").eq("id", 1).single(),
-    supabase.from("hanzi_cards").select("*").order("rank"),
+    fetchAllRows<HanziCard>("hanzi_cards", "*", "rank"),
     supabase.from("hsk3_stats").select("*").eq("id", 1).single(),
-    fetchAllHsk3Words(),
-    supabase.from("words_phrases").select("*").order("word"),
+    fetchAllRows<Hsk3Word & { level: string }>("hsk3_words", "*", "word"),
+    fetchAllRows<WordPhrase>("words_phrases", "*", "word"),
   ]);
 
   const stats = statsRow ?? staticStats;
-  const cards = (cardsRows?.length ? cardsRows : staticCards) as HanziCard[];
-  const wordsPhrases = (wordsPhrasesRows ?? []) as WordPhrase[];
+  const cards = (cardsRows.length ? cardsRows : staticCards) as HanziCard[];
+  const wordsPhrases = wordsPhrasesRows;
 
   const hsk3Coverage: Hsk3Coverage =
     hsk3WordsRows?.length && hsk3StatsRow

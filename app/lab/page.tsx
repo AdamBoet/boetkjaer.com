@@ -1,6 +1,5 @@
-import staticStats from "@/data/anki-stats.json";
 import staticCards from "@/data/hanzi-cards.json";
-import { supabase } from "@/lib/supabase";
+import { supabase, fetchAllRows } from "@/lib/supabase";
 import Link from "next/link";
 import HardCardsRow from "./hanzi/HardCardsRow";
 import { cardDueDiff } from "./hanzi/card-utils";
@@ -14,14 +13,12 @@ const CARDS_PER_DAY = 5;
 const numberFormat = new Intl.NumberFormat("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default async function Overview() {
-  const [{ data: statsRow }, { data: cardsRows }, { data: economyTransactions }] = await Promise.all([
-    supabase.from("anki_stats").select("*").eq("id", 1).single(),
-    supabase.from("hanzi_cards").select("*").order("rank"),
+  const [cardsRows, { data: economyTransactions }] = await Promise.all([
+    fetchAllRows<HanziCard>("hanzi_cards", "*", "rank"),
     supabase.from("economy_transactions").select("type, amount, occurred_on"),
   ]);
 
-  const stats = statsRow ?? staticStats;
-  const cards = (cardsRows?.length ? cardsRows : staticCards) as HanziCard[];
+  const cards = (cardsRows.length ? cardsRows : staticCards) as HanziCard[];
   const currentMonthKey = new Date().toISOString().slice(0, 7);
   const currentMonthTransactions = (economyTransactions ?? []).filter(t => t.occurred_on.startsWith(currentMonthKey));
   const totalSpending = currentMonthTransactions
@@ -32,7 +29,17 @@ export default async function Overview() {
     .reduce((s, t) => s + t.amount, 0);
   const net = totalEarnings - totalSpending;
 
-  const { learnedCount, year, dayOfYear, daysInYear } = stats;
+  // Computed live from hanzi_cards instead of the old anki_stats snapshot —
+  // that table was only ever kept fresh by opening /lab/hanzi in a Mac
+  // browser with the (now-unused) Anki desktop app + AnkiConnect running,
+  // so it went stale the moment Anki itself stopped being used.
+  const learnedCount = cards.filter(c => (c.reps ?? 0) > 0).length;
+  const now = new Date();
+  const year = now.getFullYear();
+  const yearStart = new Date(year, 0, 1);
+  const yearEnd = new Date(year + 1, 0, 1);
+  const dayOfYear = Math.floor((now.getTime() - yearStart.getTime()) / 86400000) + 1;
+  const daysInYear = Math.floor((yearEnd.getTime() - yearStart.getTime()) / 86400000);
   const goalPct = Math.round(Math.min(learnedCount / YEARLY_GOAL, 1) * 100);
   const yearPct = Math.round((dayOfYear / daysInYear) * 100);
   const maxLapses = Math.max(...cards.filter(c => c.lapses != null).map(c => c.lapses!), 1);
