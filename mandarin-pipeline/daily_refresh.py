@@ -455,36 +455,51 @@ def sb_select_all(table: str, query: str, page_size: int = 1000) -> list:
 
 
 def refresh_hsk3(limit=None, settings=None):
+    """Sentence *text* now comes from a Claude scheduled task (see
+    app/api/mandarin/sentences-due + write-sentence) instead of the local
+    1.5B model — this step only fills in pinyin + audio for whatever
+    sentence text is already there, whenever it's newer than the audio.
+    (Not used for replenish_hsk3_new_cards's initial sentence on a brand
+    new card — that's low-volume and still needs something immediately,
+    so it keeps using the local model.)"""
     settings = settings if settings is not None else load_settings()
-    max_chars = get_setting(settings, "hsk3", "sentence_max_chars")
     voice = get_setting(settings, "hsk3", "voice")
     cards = sb_select_all(
         "hsk3_words",
-        "select=word,meaning,mod,interval,reps,type,sentence_generated_at",
+        "select=word,sentence,mod,interval,reps,type,sentence_generated_at,sentence_audio_generated_at",
     )
     due_today_count = sum(1 for c in cards if is_due_today(c))
-    due = [c for c in cards if is_due_today(c) and needs_refresh(c, "sentence_generated_at")]
+    # Gated by is_due_today the same as the old text-generation step was —
+    # without it, the first run after this migration tries to backfill
+    # audio for every card that's ever lacked it (hundreds), not just
+    # tonight's due cards. Anything not due today just waits its turn,
+    # same pacing the pipeline always had.
+    pending_audio = [
+        c for c in cards
+        if is_due_today(c)
+        and c.get("sentence")
+        and (
+            not c.get("sentence_audio_generated_at")
+            or (c.get("sentence_generated_at") and c["sentence_audio_generated_at"] < c["sentence_generated_at"])
+        )
+    ]
     if limit is not None:
-        due = due[:limit]
-    print(f"hsk3_words: {due_today_count} due today, {len(due)} need a fresh sentence.")
+        pending_audio = pending_audio[:limit]
+    print(f"hsk3_words: {due_today_count} due today, {len(pending_audio)} sentence(s) need audio.")
     ok = failed = 0
-    for card in due:
+    for card in pending_audio:
         word = card["word"]
-        result = {}
+        sentence = card["sentence"]
 
-        def do_it(word=word, card=card, result=result):
-            sentence = generate_sentence(word, card.get("meaning") or "", max_chars)
+        def do_it(word=word, sentence=sentence):
             sb_update_by("hsk3_words", "word", word, {
-                "sentence": sentence,
-                "sentence_meaning": generate_translation(sentence, word, card.get("meaning")),
                 "sentence_pinyin": generate_pinyin(sentence),
                 "sentence_audio_url": generate_audio_url(word, sentence, "hsk3-sentence-audio", word, voice),
-                "sentence_generated_at": datetime.now(timezone.utc).isoformat(),
+                "sentence_audio_generated_at": datetime.now(timezone.utc).isoformat(),
             })
-            result["sentence"] = sentence
 
         if with_retries(do_it, word, "hsk3_words", word):
-            print(f"  {word}: {result['sentence']}")
+            print(f"  {word}: {sentence}")
             ok += 1
         else:
             failed += 1
@@ -492,43 +507,45 @@ def refresh_hsk3(limit=None, settings=None):
 
 
 def refresh_words_phrases(limit=None, settings=None):
+    """Same split as refresh_hsk3 — text comes from the Claude scheduled
+    task now, this only generates pinyin + audio for it."""
     settings = settings if settings is not None else load_settings()
     cards = sb_select_all(
         "words_phrases",
-        "select=note_id,word,meaning,source,mod,interval,reps,type,example_generated_at"
+        "select=note_id,word,source,mod,interval,reps,type,example,example_generated_at,example_audio_generated_at"
         "&source=in.(random_words,idioms)",
     )
     due_today_count = sum(1 for c in cards if is_due_today(c))
-    due = [c for c in cards if is_due_today(c) and needs_refresh(c, "example_generated_at")]
+    pending_audio = [
+        c for c in cards
+        if is_due_today(c)
+        and c.get("example")
+        and (
+            not c.get("example_audio_generated_at")
+            or (c.get("example_generated_at") and c["example_audio_generated_at"] < c["example_generated_at"])
+        )
+    ]
     if limit is not None:
-        due = due[:limit]
-    print(f"words_phrases: {due_today_count} due today, {len(due)} need a fresh sentence.")
+        pending_audio = pending_audio[:limit]
+    print(f"words_phrases: {due_today_count} due today, {len(pending_audio)} example(s) need audio.")
     ok = failed = 0
-    for card in due:
+    for card in pending_audio:
         word = card["word"]
         note_id = card["note_id"]
+        sentence = card["example"]
         # random_words and idioms are two distinct decks in the settings UI
-        # even though they share this one table — each keeps its own
-        # sentence length/voice.
-        deck = card["source"]
-        max_chars = get_setting(settings, deck, "sentence_max_chars")
-        voice = get_setting(settings, deck, "voice")
-        result = {}
+        # even though they share this one table — each keeps its own voice.
+        voice = get_setting(settings, card["source"], "voice")
 
-        def do_it(word=word, note_id=note_id, card=card, result=result, max_chars=max_chars, voice=voice):
-            bare_word = _strip_disambiguation(word)
-            sentence = generate_sentence(bare_word, card.get("meaning") or "", max_chars)
+        def do_it(word=word, note_id=note_id, sentence=sentence, voice=voice):
             sb_update_by("words_phrases", "note_id", note_id, {
-                "example": sentence,
-                "example_meaning": generate_translation(sentence, bare_word, card.get("meaning")),
                 "example_pinyin": generate_pinyin(sentence),
                 "example_audio_url": generate_audio_url(word, sentence, "wordphrase-sentence-audio", str(note_id), voice),
-                "example_generated_at": datetime.now(timezone.utc).isoformat(),
+                "example_audio_generated_at": datetime.now(timezone.utc).isoformat(),
             })
-            result["sentence"] = sentence
 
         if with_retries(do_it, word, "words_phrases", str(note_id)):
-            print(f"  {word}: {result['sentence']}")
+            print(f"  {word}: {sentence}")
             ok += 1
         else:
             failed += 1
