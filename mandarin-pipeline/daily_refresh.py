@@ -163,6 +163,17 @@ def needs_refresh(card: dict, generated_field: str) -> bool:
 
 SENTENCE_WORD_CHECK_ATTEMPTS = 5
 
+_DISAMBIG_SUFFIX_RE = re.compile(r"\s*\([^)]*\)\s*$")
+
+
+def _strip_disambiguation(word: str) -> str:
+    """Some words_phrases entries bake a disambiguation suffix into the
+    word itself (e.g. "花 (verb)", "部 (m.w)") to distinguish senses that
+    share a spelling. That suffix is a display label, not literal text a
+    real Chinese sentence could ever contain — generate_sentence()'s word-
+    presence check needs the bare word only."""
+    return _DISAMBIG_SUFFIX_RE.sub("", word).strip()
+
 
 def _word_present(word: str, sentence: str) -> bool:
     if word in sentence:
@@ -505,10 +516,11 @@ def refresh_words_phrases(limit=None, settings=None):
         result = {}
 
         def do_it(word=word, note_id=note_id, card=card, result=result, max_chars=max_chars, voice=voice):
-            sentence = generate_sentence(word, card.get("meaning") or "", max_chars)
+            bare_word = _strip_disambiguation(word)
+            sentence = generate_sentence(bare_word, card.get("meaning") or "", max_chars)
             sb_update_by("words_phrases", "note_id", note_id, {
                 "example": sentence,
-                "example_meaning": generate_translation(sentence, word, card.get("meaning")),
+                "example_meaning": generate_translation(sentence, bare_word, card.get("meaning")),
                 "example_pinyin": generate_pinyin(sentence),
                 "example_audio_url": generate_audio_url(word, sentence, "wordphrase-sentence-audio", str(note_id), voice),
                 "example_generated_at": datetime.now(timezone.utc).isoformat(),
@@ -1416,6 +1428,72 @@ def send_notification(title: str, body: str):
                 print(f"  Notification failed: {e}")
 
 
+def build_deck_summary(settings: dict) -> str:
+    """Per-deck New/Learn/Due breakdown for the nightly notification,
+    mirroring app/lab/hanzi/FlashcardTab.tsx's countDeck()/isNeverStudied()/
+    isLearning()/isDueForReview() exactly, so the numbers match what the
+    site itself would show first thing in the morning — before any
+    studying has happened that day, so the client's "already introduced
+    today" subtraction from the New cap is always zero at this point
+    anyway, and doesn't need reproducing here."""
+    def classify(cards: list[dict]) -> tuple[int, int, int]:
+        new = learn = due = 0
+        for c in cards:
+            reps = c.get("reps") or 0
+            typ = c.get("type")
+            if reps == 0:
+                new += 1
+            elif typ in (1, 3):
+                learn += 1
+            else:
+                dd = due_diff(c.get("mod"), c.get("interval"))
+                if dd is not None and dd <= 0:
+                    due += 1
+        return new, learn, due
+
+    hanzi_cards = sb_select_all("hanzi_cards", "select=reps,type,mod,interval")
+    hsk3_cards = sb_select_all("hsk3_words", "select=reps,type,mod,interval&known=eq.true")
+    wp_cards = sb_select_all("words_phrases", "select=reps,type,mod,interval,source&source=in.(random_words,idioms)")
+
+    # Short labels/suffixes — the full names ("汉字 writing", "5 new · 3
+    # learn · 153 due") were wide enough to get mid-line truncated in the
+    # iOS notification.
+    decks = [
+        ("hanzi", "汉字", hanzi_cards),
+        ("hsk3", "HSK3", hsk3_cards),
+        ("random_words", "Random", [c for c in wp_cards if c["source"] == "random_words"]),
+        ("idioms", "谚语/成语", [c for c in wp_cards if c["source"] == "idioms"]),
+    ]
+
+    def format_stats(new: int, learn: int, due: int) -> str:
+        stats = []
+        if new:
+            stats.append(f"{new} new")
+        if learn:
+            stats.append(f"{learn} learn")
+        if due:
+            stats.append(f"{due} due")
+        return " · ".join(stats)
+
+    lines = []
+    total_new = total_learn = total_due = 0
+    for deck_key, label, cards in decks:
+        new, learn, due = classify(cards)
+        cap = get_setting(settings, deck_key, "new_cards")
+        if cap is not None:
+            new = min(new, cap)
+        total_new += new
+        total_learn += learn
+        total_due += due
+        if not (new or learn or due):
+            continue
+        lines.append(f"{label}: {format_stats(new, learn, due)}")
+
+    total_line = f"Total: {format_stats(total_new, total_learn, total_due) or '0 due'}"
+
+    return total_line + "\n\n" + "\n".join(lines)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=None)
@@ -1506,7 +1584,12 @@ def main():
         parts.append(f"crashed: {', '.join(steps_crashed)}")
     elapsed_min = round((datetime.now(timezone.utc) - run_started).total_seconds() / 60)
     parts.append(f"took {elapsed_min}m" if elapsed_min >= 1 else "took <1m")
-    summary = " · ".join(parts)
+    footer = " · ".join(parts)
+    try:
+        summary = build_deck_summary(settings) + "\n\n" + footer
+    except Exception as e:
+        print(f"  (failed to build deck summary: {e})")
+        summary = footer
     update_run("issues" if (total_failed or steps_crashed) else "ok", summary)
 
     if args.notify:
