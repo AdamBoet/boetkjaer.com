@@ -31,9 +31,9 @@ involved; this replaced the old AnkiConnect-based pipeline.
 - Cross-check against **MDBG** (`mdbg.net/chinese/dictionary`) and **Wiktionary** for meanings/pronunciations/components whenever uncertain.
 - For any component the tool marked `N/A` or `No glyph available`, look it up on Wiktionary.
 - Verify against `docs/rules.md`:
-  - All distinct pronunciations present?
+  - All distinct pronunciations present — and no two readings identical (a duplicated `pronunciation` like `guǎn, guan3 / guǎn, guan3` means a self-referential `variant of X` sense should have been dropped, not kept)?
   - Meanings trimmed — no redundant near-synonyms?
-  - Components accurate and looked up, never guessed? Especially check simplified characters that differ structurally from their traditional form.
+  - Components accurate and looked up, never guessed? Especially check simplified characters that differ structurally from their traditional form. **Specifically check every component isn't a surname reading** (capitalized pinyin, e.g. `Guan1: surname Guan`) picked over the character's real common meaning just because it sorted first in the tool's output — this is the single most common mistake in this deck's history.
   - Examples cover **every** pronunciation (≥1 example each)?
   - Card's `rank` tag matches the tool's `frequencyRank` for the character?
 - Run `node tools/hanzi_lookup.js --verify-ranks` periodically (e.g. once per session) — reports any card whose `rank` has drifted out of sync with the frequency corpus. Read-only; fixing a reported mismatch is always a separate, explicit step.
