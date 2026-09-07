@@ -960,7 +960,7 @@ def replenish_hanzi_new_cards(limit=None, settings=None):
                 row["daily_words"] = " / ".join("; ".join(f"{w} ({m})" for w, m in g) for g in groups)
                 row["daily_words_audio_url"] = generate_word_list_audio(all_words, "hanzi-words", str(note_id), voice)
                 row["daily_words_generated_at"] = datetime.now(timezone.utc).isoformat()
-            row["audio_url"] = upload_wav(concat_with_pauses([char], voice), "hanzi-audio", char)
+            row["audio_url"] = upload_wav(concat_with_pauses([char], voice, speeds=[0.9]), "hanzi-audio", char)
 
             sb_request("POST", "/rest/v1/hanzi_cards", body=row)
             write_local_card_json(rank, char, pronunciation, front, components, note_id)
