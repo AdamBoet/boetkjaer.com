@@ -1918,7 +1918,7 @@ function ReviewSession({
                     character={current.front}
                     showHeader={false}
                     showReference={false}
-                    traceOutline={current.isNew}
+                    traceOutline={current.isNew || revealed}
                     onComplete={handleWriteComplete}
                     mobileComponents={current.isNew || revealed ? current.components : undefined}
                   />

@@ -695,6 +695,18 @@ export default function HanziWritingBox({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [character]);
 
+  // Keeps the trace-over outline in sync with the `traceOutline` prop on an
+  // already-mounted writer (e.g. the box staying up across a card flip) —
+  // the create() option above only takes effect on first mount/character
+  // change, so a later prop flip needs this live call to actually show/hide
+  // the background character.
+  useEffect(() => {
+    const writer = writerRef.current;
+    if (!writer) return;
+    if (traceOutline) writer.showOutline();
+    else writer.hideOutline();
+  }, [traceOutline]);
+
   // The reference box is the answer key: it stays blank and only reveals
   // each stroke, permanently, the moment the user draws that stroke correctly
   // in the interactive box (see the onCorrectStroke handler in startQuiz).
