@@ -262,6 +262,11 @@ export default function HanziWritingBox({
   const referenceWriterRef = useRef<HanziWriter | null>(null);
   const [doneFlash, setDoneFlash] = useState(false);
   const doneFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Persists past the transient doneFlash animation — used to stop showing
+  // the trackpad "actively waiting for input" glow once the quiz is
+  // finished, since the box now stays mounted (and trackpad mode stays on)
+  // across the card flip instead of being torn down.
+  const [isDone, setIsDone] = useState(false);
   const [mistakeFlash, setMistakeFlash] = useState(false);
   const mistakeFlashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -575,11 +580,13 @@ export default function HanziWritingBox({
   function flashDone() {
     if (doneFlashTimer.current) clearTimeout(doneFlashTimer.current);
     setDoneFlash(true);
+    setIsDone(true);
     doneFlashTimer.current = setTimeout(() => setDoneFlash(false), 600);
   }
 
   function startQuiz(writer: HanziWriter) {
     setDoneFlash(false);
+    setIsDone(false);
     setLoadError(false);
     strokeActive.current = false;
     quizReadyRef.current = false;
@@ -783,7 +790,7 @@ export default function HanziWritingBox({
                     ? "border-emerald-400 ring-4 ring-emerald-500/60 shadow-[0_0_25px_6px_rgba(16,185,129,0.55)]"
                     : mistakeFlash
                     ? "border-red-400 ring-4 ring-red-500/50 shadow-[0_0_25px_6px_rgba(239,68,68,0.45)]"
-                    : trackpadMode
+                    : trackpadMode && !isDone
                     ? "cursor-none border-blue-400 ring-4 ring-blue-500/60 shadow-[0_0_25px_6px_rgba(59,130,246,0.55)]"
                     : "border-zinc-200 dark:border-zinc-800"
                 }`}
