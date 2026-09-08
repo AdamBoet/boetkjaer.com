@@ -1445,7 +1445,7 @@ def send_notification(title: str, body: str):
                 print(f"  Notification failed: {e}")
 
 
-def build_deck_summary(settings: dict) -> str:
+def build_deck_summary(settings: dict) -> tuple[str, int, int]:
     """Per-deck New/Learn/Due breakdown for the nightly notification,
     mirroring app/lab/hanzi/FlashcardTab.tsx's countDeck()/isNeverStudied()/
     isLearning()/isDueForReview() exactly, so the numbers match what the
@@ -1508,7 +1508,7 @@ def build_deck_summary(settings: dict) -> str:
 
     total_line = f"Total: {format_stats(total_new, total_learn, total_due) or '0 due'}"
 
-    return total_line + "\n\n" + "\n".join(lines)
+    return total_line + "\n\n" + "\n".join(lines), total_new, total_due
 
 
 def main():
@@ -1602,16 +1602,23 @@ def main():
     elapsed_min = round((datetime.now(timezone.utc) - run_started).total_seconds() / 60)
     parts.append(f"took {elapsed_min}m" if elapsed_min >= 1 else "took <1m")
     footer = " · ".join(parts)
+    deck_new = deck_due = None
     try:
-        summary = build_deck_summary(settings) + "\n\n" + footer
+        deck_summary, deck_new, deck_due = build_deck_summary(settings)
+        summary = deck_summary + "\n\n" + footer
     except Exception as e:
         print(f"  (failed to build deck summary: {e})")
         summary = footer
     update_run("issues" if (total_failed or steps_crashed) else "ok", summary)
 
     if args.notify:
-        title = "Daily card update" if not total_failed and not steps_crashed else "Daily card update (with issues)"
-        send_notification(title, summary)
+        had_issues = total_failed or steps_crashed
+        title = "Nightly run success" if not had_issues else "Nightly run issues"
+        if deck_new is not None:
+            body = f"{deck_new} new · {deck_due} due"
+        else:
+            body = footer
+        send_notification(title, body)
 
 
 if __name__ == "__main__":
