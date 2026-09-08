@@ -1936,15 +1936,12 @@ function ReviewSession({
             )}
 
             {(revealed || current.isNew) && current.components && (
-              // Mobile shows this via HanziWritingBox's own mobileComponents
-              // prop (above its Hint button) — hidden on mobile here
-              // whenever that's the case (revealed && !redoDrawing) to
-              // avoid showing the hint twice.
-              <p
-                className={`mt-1.5 text-sm text-zinc-500 dark:text-zinc-400 text-center ${
-                  !revealed || redoDrawing ? "hidden md:block" : ""
-                }`}
-              >
+              // Every case this renders in (isNew front, revealed frozen
+              // box, revealed redraw box) already shows the same text on
+              // mobile via HanziWritingBox's own mobileComponents prop
+              // (above its Hint button) — always hide this copy there to
+              // avoid showing it twice.
+              <p className="mt-1.5 text-sm text-zinc-500 dark:text-zinc-400 text-center hidden md:block">
                 {current.components}
               </p>
             )}
