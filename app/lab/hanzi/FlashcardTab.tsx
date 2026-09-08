@@ -1906,7 +1906,7 @@ function ReviewSession({
                   // to mount a brand-new, blank instance instead, which
                   // looked like the character just kept resetting.
                   <HanziWritingBox
-                    key={`redraw-${redoAttempt}`}
+                    key={`redraw-${current?.id}-${redoAttempt}`}
                     character={current.front}
                     showHeader={false}
                     showReference={false}
@@ -1917,9 +1917,13 @@ function ReviewSession({
                   // Same instance stays mounted across the flip — whatever
                   // the user has drawn (finished or not) must never be wiped
                   // out just by revealing the card. Only R (redoDrawing,
-                  // above) explicitly starts a fresh blank box.
+                  // above) or moving to a different card (current.id in the
+                  // key) mounts a fresh one — the latter matters because the
+                  // one-time pointer-lock re-engage effect inside the box
+                  // only ever fires on an actual mount, not a character prop
+                  // update.
                   <HanziWritingBox
-                    key={`front-${redoAttempt}`}
+                    key={`front-${current?.id}-${redoAttempt}`}
                     character={current.front}
                     showHeader={false}
                     showReference={false}
