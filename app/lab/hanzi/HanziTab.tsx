@@ -155,12 +155,17 @@ export default function HanziTab({
       .catch(() => setFreq(null));
   }, []);
 
-  const { updatedAt, dayOfYear, daysInYear } = stats;
-  // Live, not the cached anki_stats snapshot (stats.learnedCount) — that
-  // only updates when "Refresh from Anki" runs, so it drifts stale as soon
-  // as cards get graded directly on the site (which writes straight to
-  // Supabase, bypassing Anki entirely).
+  const { updatedAt } = stats;
+  // Live, not the cached anki_stats snapshot (stats.learnedCount,
+  // stats.dayOfYear/daysInYear) — that only updates when "Refresh from
+  // Anki" runs, so it drifts stale as soon as cards get graded directly on
+  // the site (which writes straight to Supabase, bypassing Anki entirely).
   const learnedCount = cards.filter((c) => (c.reps ?? 0) > 0).length;
+  const now = new Date();
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+  const yearEnd = new Date(now.getFullYear() + 1, 0, 1);
+  const dayOfYear = Math.floor((now.getTime() - yearStart.getTime()) / 86400000) + 1;
+  const daysInYear = Math.floor((yearEnd.getTime() - yearStart.getTime()) / 86400000);
   const updatedStr = new Date(updatedAt).toLocaleString("en-GB", {
     day: "numeric",
     month: "short",
