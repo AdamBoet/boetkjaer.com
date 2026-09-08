@@ -6,7 +6,6 @@ import { type HanziCard } from "./CharacterGrid";
 import { cardDueDiff } from "./card-utils";
 import { type Hsk3Coverage, type Hsk3Word, LEVELS } from "./Hsk3Grid";
 import HanziWritingBox from "./HanziWritingBox";
-import HanziCharacterPreview from "./HanziCharacterPreview";
 import { TrackpadModeProvider, useTrackpadModeContext } from "./TrackpadModeContext";
 import { GridPrefProvider, useGridPref } from "./GridPrefContext";
 import ScreenshotUploadButton from "./ScreenshotUploadButton";
@@ -1500,28 +1499,17 @@ function ReviewSession({
     shownAtRef.current = Date.now();
   }, [current?.id]);
 
-  // Redraw (R, back side only): swaps the filled-in character preview for a
-  // blank drawable box so the user can trace it again. `redoAttempt` forces
-  // a fresh mount each press, even for the same character, so a completed
-  // redraw doesn't just sit there stale the next time R is pressed.
+  // Redraw (R): swaps the writing box for a fresh blank one so the user can
+  // trace it again from scratch. `redoAttempt` forces a fresh mount each
+  // press, even for the same character, so a completed redraw doesn't just
+  // sit there stale the next time R is pressed. Only ever entered explicitly
+  // via R — flipping the card on its own must never discard drawn strokes,
+  // so this resets to false only when the card itself changes.
   const [redoDrawing, setRedoDrawing] = useState(false);
   const [redoAttempt, setRedoAttempt] = useState(0);
-  // Tracks whether the current reveal came from successfully drawing the
-  // character on the front side (handleWriteComplete's auto-reveal timer)
-  // rather than Show Answer/Space — only the latter should force the back
-  // side straight into redraw; if you just drew it correctly, you don't
-  // need to immediately redo it.
-  const revealedViaDraw = useRef(false);
   useEffect(() => {
-    revealedViaDraw.current = false;
+    setRedoDrawing(false);
   }, [current?.id]);
-  useEffect(() => {
-    // Revealing a hanzi card (via Show Answer/Space, not a successful draw)
-    // should start the back side already in redraw mode (blank, ready to
-    // trace) rather than showing the filled-in preview first and requiring
-    // an extra R press to clear it.
-    setRedoDrawing(revealed && current?.source === "hanzi" && !revealedViaDraw.current);
-  }, [revealed, current?.id, current?.source]);
 
   // Warms the browser's cache for the next few upcoming cards' audio and
   // pictures — otherwise the first play/render of each card pays a real
@@ -1587,7 +1575,6 @@ function ReviewSession({
   function handleWriteComplete() {
     if (writeCompleteTimer.current) clearTimeout(writeCompleteTimer.current);
     writeCompleteTimer.current = setTimeout(() => {
-      revealedViaDraw.current = true;
       setRevealed(true);
     }, 600);
   }
@@ -1746,10 +1733,9 @@ function ReviewSession({
       }
 
       if (e.key.toLowerCase() === "r" && current?.source === "hanzi") {
-        // On the back, swaps the filled-in preview for a blank box to trace
-        // again; on the front, the writing box is already up — this just
-        // clears whatever's been drawn so far and starts the stroke count
-        // over, without giving away the answer.
+        // Swaps whatever's currently drawn for a fresh blank box to trace
+        // again, resetting the stroke count — on the front or the back,
+        // without giving away the answer.
         if (revealed) setRedoDrawing(true);
         setRedoAttempt((n) => n + 1);
         return;
@@ -1912,21 +1898,21 @@ function ReviewSession({
 
             {current.source === "hanzi" && (
               <div className="mt-6">
-                {revealed ? (
-                  redoDrawing ? (
-                    <HanziWritingBox
-                      key={`redraw-${redoAttempt}`}
-                      character={current.front}
-                      showHeader={false}
-                      showReference={false}
-                      traceOutline
-                      onComplete={() => setRedoDrawing(false)}
-                      mobileComponents={current.components}
-                    />
-                  ) : (
-                    <HanziCharacterPreview character={current.front} />
-                  )
+                {redoDrawing ? (
+                  <HanziWritingBox
+                    key={`redraw-${redoAttempt}`}
+                    character={current.front}
+                    showHeader={false}
+                    showReference={false}
+                    traceOutline
+                    onComplete={() => setRedoDrawing(false)}
+                    mobileComponents={current.components}
+                  />
                 ) : (
+                  // Same instance stays mounted across the flip — whatever
+                  // the user has drawn (finished or not) must never be wiped
+                  // out just by revealing the card. Only R (redoDrawing,
+                  // above) explicitly starts a fresh blank box.
                   <HanziWritingBox
                     key={`front-${redoAttempt}`}
                     character={current.front}
@@ -1934,7 +1920,7 @@ function ReviewSession({
                     showReference={false}
                     traceOutline={current.isNew}
                     onComplete={handleWriteComplete}
-                    mobileComponents={current.isNew ? current.components : undefined}
+                    mobileComponents={current.isNew || revealed ? current.components : undefined}
                   />
                 )}
               </div>
@@ -1942,10 +1928,9 @@ function ReviewSession({
 
             {(revealed || current.isNew) && current.components && (
               // Mobile shows this via HanziWritingBox's own mobileComponents
-              // prop (above its Hint button) whenever that box is actually
-              // rendered — only fall back to this copy on mobile too when
-              // the box has been swapped for the static filled-in preview
-              // instead (no competing Hint button there).
+              // prop (above its Hint button) — hidden on mobile here
+              // whenever that's the case (revealed && !redoDrawing) to
+              // avoid showing the hint twice.
               <p
                 className={`mt-1.5 text-sm text-zinc-500 dark:text-zinc-400 text-center ${
                   !revealed || redoDrawing ? "hidden md:block" : ""
