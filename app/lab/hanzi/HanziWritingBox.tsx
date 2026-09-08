@@ -581,6 +581,14 @@ export default function HanziWritingBox({
     if (doneFlashTimer.current) clearTimeout(doneFlashTimer.current);
     setDoneFlash(true);
     setIsDone(true);
+    // Release the OS-level lock so the real cursor is usable again — this
+    // box now stays mounted across the flip instead of unmounting (which
+    // used to release it implicitly), so without this the mouse would stay
+    // captured/hidden indefinitely after finishing. Trackpad mode itself
+    // (the corner indicator, localStorage) is left on: the mount effect
+    // re-requests the lock the moment the next card or a redraw actually
+    // mounts a fresh box.
+    if (document.pointerLockElement === targetRef.current) document.exitPointerLock();
     doneFlashTimer.current = setTimeout(() => setDoneFlash(false), 600);
   }
 
