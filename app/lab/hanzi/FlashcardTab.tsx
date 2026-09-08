@@ -1899,13 +1899,18 @@ function ReviewSession({
             {current.source === "hanzi" && (
               <div className="mt-6">
                 {redoDrawing ? (
+                  // No onComplete swap here — finishing a redraw should
+                  // settle into its own done state (green flash, pointer
+                  // lock release) exactly like the front box does, and stay
+                  // put. Swapping back to the front box on completion used
+                  // to mount a brand-new, blank instance instead, which
+                  // looked like the character just kept resetting.
                   <HanziWritingBox
                     key={`redraw-${redoAttempt}`}
                     character={current.front}
                     showHeader={false}
                     showReference={false}
                     traceOutline
-                    onComplete={() => setRedoDrawing(false)}
                     mobileComponents={current.components}
                   />
                 ) : (
