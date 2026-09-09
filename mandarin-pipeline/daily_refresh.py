@@ -860,10 +860,20 @@ def build_pronunciation_and_front(definitions: list[dict]) -> tuple[str, str]:
     the corpus considered common enough to include at all."""
     def extract(only_non_proper: bool) -> tuple[list[str], list[str]]:
         pron_parts, front_parts = [], []
+        # CC-CEDICT sometimes carries more than one entry for the exact same
+        # reading (e.g. 宁's "ning2: peaceful/rather" and a separate "ning2:
+        # peaceful") — without this, the mechanical construction below
+        # would emit the same pinyin/gloss twice. Keep only the first
+        # definition seen per distinct reading.
+        seen_pinyin = set()
         for d in definitions:
             py = d["pinyin"]
             if only_non_proper and py[:1].isupper():
                 continue
+            py_key = py.lower()
+            if py_key in seen_pinyin:
+                continue
+            seen_pinyin.add(py_key)
             senses = [s.strip() for s in d["definition"].split("/")]
             # A proper-noun reading's own definition often leads with the
             # surname sense (e.g. "surname Song/the Song dynasty...") —
