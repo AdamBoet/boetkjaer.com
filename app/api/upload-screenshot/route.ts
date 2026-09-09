@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-server";
 
-// Same bucket as upload-media/route.ts and create_card.py's upload_media().
+// Same bucket as upload-media/route.ts and supabase_helpers.py's upload_media().
 const BUCKET = "mandarin-media";
 
 const TARGET_SOURCES = ["random_words", "idioms"] as const;

@@ -42,7 +42,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(__file__))
-from create_card import sb_select, sb_insert, sb_request, upload_media, ENV, _CJK_RE, _SSL_CTX, next_negative_note_id  # noqa: E402
+from supabase_helpers import sb_select, sb_insert, sb_request, upload_media, ENV, _CJK_RE, _SSL_CTX, next_negative_note_id  # noqa: E402
 
 from llama_cpp import Llama
 from kokoro import KPipeline
@@ -1057,11 +1057,10 @@ _next_negative_wp_note_id = None
 
 
 def next_negative_wp_note_id() -> int:
-    """Same convention as the two create_card.py scripts' own
-    next_negative_note_id(), but scoped to words_phrases specifically —
-    daily_refresh.py only ever imports the Anki 汉字/create_card.py sibling
-    (which scopes its version to hanzi_cards), not the separate "Anki
-    random words" one, so this can't just be reused via that import."""
+    """Same convention as supabase_helpers.py's own next_negative_note_id(),
+    but scoped to words_phrases specifically — that one is scoped to
+    hanzi_cards and shared with a separate "Anki random words" sibling
+    project, so it can't just be reused via that import."""
     global _next_negative_wp_note_id
     if _next_negative_wp_note_id is None:
         existing = sb_select("words_phrases", "select=note_id&note_id=lt.0&order=note_id.asc&limit=1")
