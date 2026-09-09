@@ -28,7 +28,6 @@ Usage:
 """
 
 import argparse
-import glob
 import hashlib
 import json
 import os
@@ -210,13 +209,40 @@ def _echoes_meaning(sentence: str) -> bool:
     return len(letters) > 6 and len(letters) > len(sentence) * 0.3
 
 
-def generate_sentence(word: str, meaning: str, max_chars: int = DEFAULT_SETTINGS["sentence_max_chars"]) -> str:
+# A short, concrete difficulty nudge per HSK_LEVEL_ORDER value — kept
+# brief since this small local model already struggles to reliably follow
+# even the base "must include the word" instruction (see the correction
+# loop below), so an elaborate difficulty description would likely just
+# get ignored rather than followed.
+LEVEL_DIFFICULTY_HINT = {
+    "hsk1": "非常简单，只用最基础的词汇和最简单的主谓宾句型",
+    "hsk2": "简单，用基础词汇和简单句型",
+    "hsk3": "中等偏简单，可以用一些日常连接词（因为、所以、但是等）",
+    "hsk4": "中等难度，可以用较丰富的词汇和从句结构",
+    "hsk5": "较难，尽量用更书面、更精确的词汇和复杂一点的句型",
+    "hsk6": "困难，尽量用高级词汇和复杂句型，接近母语者日常表达水平",
+    "hsk7-9": "非常困难，用高级、精确、地道的词汇和复杂句型，接近母语者书面表达水平",
+}
+
+
+def generate_sentence(
+    word: str,
+    meaning: str,
+    max_chars: int = DEFAULT_SETTINGS["sentence_max_chars"],
+    level: str | None = None,
+    richer: bool = False,
+) -> str:
     prompt = (
         f"请用一个简短自然的中文句子造句，句子中必须逐字包含\"{word}\"这{len(word)}个字，"
         f"不能用意思相近的其他词代替。"
         f"它的意思是：{meaning}。句子要尽量简短，不超过{max_chars}个汉字（不算标点）。"
-        f"只输出这句话，不要输出拼音、翻译或其他解释。"
     )
+    hint = LEVEL_DIFFICULTY_HINT.get(level) if level else None
+    if hint:
+        prompt += f"句子难度应大致符合：{hint}。字数上限不变，用词的难度换取句子的难度。"
+    elif richer:
+        prompt += "句子可以比最简单、最平淡的示例句稍微丰富一些，不要过于平淡。"
+    prompt += "只输出这句话，不要输出拼音、翻译或其他解释。"
     # The prompt already says "must include {word}", but this small model
     # doesn't reliably follow that — it sometimes substitutes a related word
     # instead (e.g. 赞叹 for 赞美, 驼队 for 骆驼) or just writes an example OF
@@ -810,7 +836,7 @@ def refresh_hanzi(limit=None, settings=None):
 # deliberately mechanical (no LLM "judgment calls" replicating the
 # meaning-pruning/component-selection rules in docs/rules.md that a human
 # normally applies) — lower fidelity than hand-curated cards, fixable later
-# by hand-editing the local cards/*.json file this also writes.
+# by hand-editing the card directly on the site.
 
 def lookup_at_rank(rank: int) -> dict:
     result = subprocess.run(
@@ -875,24 +901,6 @@ def build_components(components: dict, char: str, front: str) -> str:
     return ", ".join(f"{c} ({m})" for c, m in picked)
 
 
-def write_local_card_json(rank: int, char: str, pronunciation: str, front: str, components: str, note_id: int):
-    # The only existing way to hand-fix a card's front/pronunciation/
-    # components is edit this file, then rerun create_card.py on it — so an
-    # auto-created card needs one too, or it has no path to ever being
-    # hand-corrected.
-    path = os.path.join(ANKI_HANZI_ROOT, "cards", f"{rank:03d}_{char}.json")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump({
-            "rank": rank,
-            "front": front,
-            "character": char,
-            "pronunciation": pronunciation,
-            "components": components,
-            "examples": "",
-            "note_id": note_id,
-        }, f, ensure_ascii=False, indent=2)
-
-
 def replenish_hanzi_new_cards(limit=None, settings=None):
     settings = settings if settings is not None else load_settings()
     target = get_new_cards_target(settings, "hanzi")
@@ -907,15 +915,8 @@ def replenish_hanzi_new_cards(limit=None, settings=None):
     if shortfall == 0:
         return 0, 0, shortfall
 
-    # A rank prefix can carry a letter suffix for a variant sharing another
-    # card's rank (e.g. 041b_著.json alongside 041_着.json) — take only the
-    # leading digits rather than assuming the whole prefix parses as int.
-    local_ranks = [
-        int(re.match(r"\d+", os.path.basename(p)).group())
-        for p in glob.glob(os.path.join(ANKI_HANZI_ROOT, "cards", "*.json"))
-    ]
     db_ranks = [r["rank"] for r in sb_select_all("hanzi_cards", "select=rank")]
-    rank = max([*local_ranks, *db_ranks, 0]) + 1
+    rank = max([*db_ranks, 0]) + 1
     existing_chars = {r["character"] for r in sb_select_all("hanzi_cards", "select=character")}
 
     created = failed = 0
@@ -963,7 +964,6 @@ def replenish_hanzi_new_cards(limit=None, settings=None):
             row["audio_url"] = upload_wav(concat_with_pauses([char], voice, speeds=[0.9]), "hanzi-audio", char)
 
             sb_request("POST", "/rest/v1/hanzi_cards", body=row)
-            write_local_card_json(rank, char, pronunciation, front, components, note_id)
             existing_chars.add(char)
             result.update(char=char, note_id=note_id)
 
@@ -1015,8 +1015,8 @@ def replenish_hsk3_new_cards(limit=None, settings=None):
                 break
             word, meaning = row["word"], row.get("meaning")
 
-            def do_it(word=word, meaning=meaning):
-                sentence = generate_sentence(word, meaning or "", max_chars)
+            def do_it(word=word, meaning=meaning, level=level):
+                sentence = generate_sentence(word, meaning or "", max_chars, level=level)
                 sb_update_by("hsk3_words", "word", word, {
                     "known": True,
                     "interval": 0, "reps": 0, "lapses": 0, "factor": DEFAULT_FACTOR,
@@ -1373,7 +1373,7 @@ def process_screenshot_queue(limit=None, settings=None):
             # a fresh reps=0 card is invisible to refresh_words_phrases()'s
             # due-cycle scan indefinitely (is_due_today() returns False for
             # reps==0), same shape as today's hanzi_cards daily_words bug.
-            sentence = generate_sentence(word, meaning, max_chars)
+            sentence = generate_sentence(word, meaning, max_chars, richer=(target_source == "random_words"))
             sb_update_by("words_phrases", "note_id", note_id, {
                 "example": sentence,
                 "example_meaning": generate_translation(sentence, word, meaning),
