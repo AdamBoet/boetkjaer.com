@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useEffect, useLayoutEffect } from "react";
+import { useMemo, useRef, useState, useEffect, useLayoutEffect, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import { type HanziCard } from "./CharacterGrid";
 import { cardDueDiff } from "./card-utils";
@@ -1155,6 +1155,7 @@ function ClickableHanziWord({
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [segments, setSegments] = useState<WordSegment[] | null>(null);
+  const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
   const ref = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -1190,39 +1191,39 @@ function ClickableHanziWord({
   const syllables = pinyin?.trim().split(/\s+/) ?? [];
   const syllablesAlign = syllables.length === chars.length;
 
-  let charOffset = 0;
+  // Popup itself is portalled to <body>, positioned from the clicked/
+  // hovered word's actual screen rect — a plain nested `absolute` span (the
+  // original approach) only stacks correctly within its own stacking
+  // context, and an ancestor elsewhere on the card (transforms/backdrops on
+  // the review UI) was creating one, so the popup rendered *under* later
+  // page content instead of always on top. Escaping to <body> sidesteps
+  // that entirely.
+  function showAt(i: number, kind: "click" | "hover", e: ReactMouseEvent<HTMLElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPopupPos({ top: rect.bottom + 8, left: rect.left + rect.width / 2 });
+    if (kind === "click") setOpenIndex((cur) => (cur === i ? null : i));
+    else setHoverIndex(i);
+  }
 
   return (
     <span ref={ref}>
       {segments
         ? segments.map((seg, i) => {
-            const segChars = Array.from(seg.word);
-            const startOffset = charOffset;
-            charOffset += segChars.length;
-            const deckCard = segChars.length === 1 ? hanziByChar.get(seg.word) : undefined;
-            const hasEntries = seg.entries.length > 0;
-            if (!deckCard && !hasEntries) return <span key={i}>{seg.word}</span>;
-            const syllable = syllablesAlign ? syllables[startOffset] : undefined;
+            if (seg.entries.length === 0) return <span key={i}>{seg.word}</span>;
             return (
-              <span key={i} className="relative inline-block z-30">
-                <span
-                  className={`cursor-pointer rounded transition-colors ${
-                    shownIndex === i ? "bg-blue-200 dark:bg-blue-900/60" : ""
-                  }`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setOpenIndex((cur) => (cur === i ? null : i));
-                  }}
-                  onMouseEnter={() => setHoverIndex(i)}
-                  onMouseLeave={() => setHoverIndex((cur) => (cur === i ? null : cur))}
-                >
-                  {seg.word}
-                </span>
-                {shownIndex === i && (
-                  <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-40 animate-dropdown-in">
-                    {deckCard ? <CharInfoPopup card={deckCard} syllable={syllable} /> : <WordInfoPopup segment={seg} />}
-                  </span>
-                )}
+              <span
+                key={i}
+                className={`cursor-pointer rounded transition-colors ${
+                  shownIndex === i ? "bg-blue-200 dark:bg-blue-900/60" : ""
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  showAt(i, "click", e);
+                }}
+                onMouseEnter={(e) => showAt(i, "hover", e)}
+                onMouseLeave={() => setHoverIndex((cur) => (cur === i ? null : cur))}
+              >
+                {seg.word}
               </span>
             );
           })
@@ -1230,28 +1231,39 @@ function ClickableHanziWord({
             const card = hanziByChar.get(ch);
             if (!card) return <span key={i}>{ch}</span>;
             return (
-              <span key={i} className="relative inline-block z-30">
-                <span
-                  className={`cursor-pointer rounded transition-colors ${
-                    shownIndex === i ? "bg-blue-200 dark:bg-blue-900/60" : ""
-                  }`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setOpenIndex((cur) => (cur === i ? null : i));
-                  }}
-                  onMouseEnter={() => setHoverIndex(i)}
-                  onMouseLeave={() => setHoverIndex((cur) => (cur === i ? null : cur))}
-                >
-                  {ch}
-                </span>
-                {shownIndex === i && (
-                  <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-40 animate-dropdown-in">
-                    <CharInfoPopup card={card} syllable={syllablesAlign ? syllables[i] : undefined} />
-                  </span>
-                )}
+              <span
+                key={i}
+                className={`cursor-pointer rounded transition-colors ${
+                  shownIndex === i ? "bg-blue-200 dark:bg-blue-900/60" : ""
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  showAt(i, "click", e);
+                }}
+                onMouseEnter={(e) => showAt(i, "hover", e)}
+                onMouseLeave={() => setHoverIndex((cur) => (cur === i ? null : cur))}
+              >
+                {ch}
               </span>
             );
           })}
+      {shownIndex !== null &&
+        popupPos &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className="fixed z-50 -translate-x-1/2 animate-dropdown-in"
+            style={{ top: popupPos.top, left: popupPos.left }}
+          >
+            {segments
+              ? segments[shownIndex] && <WordInfoPopup segment={segments[shownIndex]} />
+              : (() => {
+                  const card = hanziByChar.get(chars[shownIndex]);
+                  return card ? <CharInfoPopup card={card} syllable={syllablesAlign ? syllables[shownIndex] : undefined} /> : null;
+                })()}
+          </div>,
+          document.body
+        )}
       {/* Portalled (not a plain sibling div) since this component renders
           inline inside <p> elements — a block-level div sibling there would
           be invalid HTML and cause the browser to auto-close the paragraph.
