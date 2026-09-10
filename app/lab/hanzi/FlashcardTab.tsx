@@ -1156,6 +1156,7 @@ function ClickableHanziWord({
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [segments, setSegments] = useState<WordSegment[] | null>(null);
   const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!text) {
@@ -1174,6 +1175,34 @@ function ClickableHanziWord({
 
   const chars = Array.from(text);
   const shownIndex = openIndex ?? hoverIndex;
+
+  // Belt-and-suspenders dismissal: a native document-level *capture*-phase
+  // listener, which runs before the browser even reaches any bubble-phase
+  // handler — including React's own root-delegated dispatch, which is what
+  // the card's tap-to-advance onClick is built on. Everything tried before
+  // this (a portalled full-screen overlay div with stopPropagation, both on
+  // the overlay and the popup) kept failing in practice for reasons that
+  // couldn't be pinned down without a real device/browser to inspect — this
+  // sidesteps all of that by intercepting at the lowest possible level,
+  // independent of z-index, hit-testing, or React's portal event semantics.
+  // Lets a tap on another interactive word through untouched (so switching
+  // between words works normally) by checking for the shared
+  // data-word-lookup-target marker; only a tap truly outside both the
+  // popup and any word gets stopped here.
+  useEffect(() => {
+    if (shownIndex === null) return;
+    function handleOutsideClick(e: MouseEvent) {
+      const target = e.target as Node;
+      if (popupRef.current?.contains(target)) return;
+      if (target instanceof Element && target.closest("[data-word-lookup-target]")) return;
+      e.stopPropagation();
+      e.preventDefault();
+      setOpenIndex(null);
+      setHoverIndex(null);
+    }
+    document.addEventListener("click", handleOutsideClick, true);
+    return () => document.removeEventListener("click", handleOutsideClick, true);
+  }, [shownIndex]);
   // Only trust a positional word-pinyin match when the syllable count
   // actually lines up with the character count — otherwise a mismatched
   // index would confidently show the WRONG reading, worse than showing all
@@ -1214,6 +1243,7 @@ function ClickableHanziWord({
             return (
               <span
                 key={i}
+                data-word-lookup-target
                 className={`cursor-pointer rounded transition-colors ${
                   shownIndex === i ? "bg-blue-200 dark:bg-blue-900/60" : ""
                 }`}
@@ -1234,6 +1264,7 @@ function ClickableHanziWord({
             return (
               <span
                 key={i}
+                data-word-lookup-target
                 className={`cursor-pointer rounded transition-colors ${
                   shownIndex === i ? "bg-blue-200 dark:bg-blue-900/60" : ""
                 }`}
@@ -1248,14 +1279,21 @@ function ClickableHanziWord({
               </span>
             );
           })}
+      {/* Portalled (not a plain sibling div) since this component renders
+          inline inside <p> elements — a block-level div sibling there would
+          be invalid HTML and cause the browser to auto-close the paragraph.
+          Dismissal itself is handled entirely by the document capture-phase
+          listener above — this is just the visible content, with a ref so
+          that listener can tell a tap on the popup apart from one outside
+          it. */}
       {shownIndex !== null &&
         popupPos &&
         typeof document !== "undefined" &&
         createPortal(
           <div
+            ref={popupRef}
             className="fixed z-50 -translate-x-1/2 animate-dropdown-in"
             style={{ top: popupPos.top, left: popupPos.left }}
-            onClick={(e) => e.stopPropagation()}
           >
             {segments
               ? segments[shownIndex] && <WordInfoPopup segment={segments[shownIndex]} />
@@ -1264,33 +1302,6 @@ function ClickableHanziWord({
                   return card ? <CharInfoPopup card={card} syllable={syllablesAlign ? syllables[shownIndex] : undefined} /> : null;
                 })()}
           </div>,
-          document.body
-        )}
-      {/* Portalled (not a plain sibling div) since this component renders
-          inline inside <p> elements — a block-level div sibling there would
-          be invalid HTML and cause the browser to auto-close the paragraph.
-          Gated on shownIndex (not just openIndex) since on mobile the
-          popup can also be showing from hoverIndex alone (touch-to-mouse-
-          event emulation doesn't always cleanly register as a click).
-          Must call stopPropagation() — a portal escapes the DOM tree (so
-          it renders outside/on top of everything, which is the whole
-          point), but React's *synthetic* event system still bubbles a
-          click through the React component tree, not the DOM tree, so
-          without this the click keeps going after closing the popup and
-          still reaches the card's tap-to-advance handler underneath,
-          skip-grading the card in the same tap that was meant to just
-          dismiss the popup. */}
-      {shownIndex !== null &&
-        typeof document !== "undefined" &&
-        createPortal(
-          <div
-            className="fixed inset-0 z-20"
-            onClick={(e) => {
-              e.stopPropagation();
-              setOpenIndex(null);
-              setHoverIndex(null);
-            }}
-          />,
           document.body
         )}
     </span>
