@@ -1021,63 +1021,6 @@ export function AudioButton({ src, label }: { src?: string | null; label: string
   );
 }
 
-// Trimmed-down version of CharacterGrid.tsx's Tooltip — just character,
-// pinyin, and meaning, no difficulty/stats/HanziCraft link, for the
-// per-character popup on a word's review-card header.
-// `front` is stored as "romanization (meaning)", possibly repeated per
-// pronunciation joined by " / " (e.g. "jiang (to descend) / xiang (to
-// surrender)") — the popup only wants the meaning itself, not the
-// romanization repeated a second time or the literal parens.
-// The data mixes two conventions: separate "romanization (meaning)" groups
-// per pronunciation joined by " / " (e.g. "le (completed action) / liao (to
-// finish; clear)"), and a single "romanization (senseA / senseB)" group
-// where the "/" separates senses of ONE pronunciation, not two different
-// ones (e.g. "zi (child / noun suffix)"). Extracting every parenthetical
-// group directly — rather than splitting on " / " first — handles both:
-// multiple groups get joined with " / ", a single group's own internal "/"
-// is left exactly as written either way.
-function extractMeaning(front: string): string {
-  const groups = [...front.matchAll(/\(([^)]*)\)/g)].map((m) => m[1].trim());
-  return groups.length > 0 ? groups.join(" / ") : front;
-}
-
-function normalizeSyllable(s: string): string {
-  return s.trim().toLowerCase().replace(/[^a-zü:1-5]/gi, "");
-}
-
-// `pronunciation`/`front` both list every reading a polyphonic character
-// has, " / "-separated in the same order (e.g. pronunciation "fēn, fen1 /
-// fèn, fen4", front "fen (to divide; minute) / fen (share; portion)") — but
-// a given WORD only ever uses one of them. Match the word's own pinyin
-// syllable at this character's position against each reading's tone-marked
-// form to pick just that one; if nothing matches (mismatched syllable
-// count, unusual formatting, or the card only has one reading anyway),
-// fall back to showing every reading rather than guessing wrong.
-function pickReading(card: HanziCard, syllable?: string): { pronunciation: string; front: string } {
-  const pronSegments = card.pronunciation.split(" / ").map((s) => s.trim());
-  const frontSegments = card.front.split(" / ").map((s) => s.trim());
-  if (!syllable || pronSegments.length <= 1) return { pronunciation: card.pronunciation, front: card.front };
-  const target = normalizeSyllable(syllable);
-  const idx = pronSegments.findIndex((seg) => normalizeSyllable(seg.split(",")[0]) === target);
-  if (idx === -1 || idx >= frontSegments.length) return { pronunciation: card.pronunciation, front: card.front };
-  return { pronunciation: pronSegments[idx], front: frontSegments[idx] };
-}
-
-function CharInfoPopup({ card, syllable }: { card: HanziCard; syllable?: string }) {
-  const reading = pickReading(card, syllable);
-  return (
-    <div className="w-56 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl p-3.5 text-sm text-left text-zinc-900 dark:text-zinc-100">
-      <div className="flex items-start gap-3">
-        <span className="text-4xl leading-none">{card.character}</span>
-        <div className="min-w-0 text-left">
-          <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-snug">{reading.pronunciation}</p>
-          <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-snug mt-0.5">{extractMeaning(reading.front)}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 type WordEntry = { traditional: string; pinyin: string; meaning: string };
 type WordSegment = { word: string; entries: WordEntry[] };
 
@@ -1137,21 +1080,14 @@ function WordInfoPopup({ segment }: { segment: WordSegment }) {
 // Renders a word/sentence with each recognized dictionary word clickable —
 // segmented via /api/word-lookup (CC-CEDICT-based, covers ANY word, not
 // just the user's own deck) so a multi-character word is one click target,
-// not split per character. A character/word already in the user's own
-// hanzi ("汉字 writing") deck keeps showing that curated data (their own
-// pronunciation/meaning, including polyphonic disambiguation) instead of
-// the generic dictionary entry. While the segmentation fetch is in flight,
-// or if it fails, falls back to the original per-character hanziByChar-only
-// rendering — never blocks, never regresses.
-function ClickableHanziWord({
-  text,
-  pinyin,
-  hanziByChar,
-}: {
-  text: string;
-  pinyin?: string;
-  hanziByChar: Map<string, HanziCard>;
-}) {
+// not split per character. Only ever CC-CEDICT-sourced now — a character
+// that also happens to be a card in the user's own deck used to keep
+// showing that curated data instead, but that made otherwise-identical
+// words look inconsistent depending on deck membership, so it was dropped
+// in favor of one lookup, one style, everywhere. While the segmentation
+// fetch is in flight, or if it fails, the text is just plain/non-
+// interactive — never blocks, never shows stale or wrong data.
+function ClickableHanziWord({ text }: { text: string }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [segments, setSegments] = useState<WordSegment[] | null>(null);
@@ -1173,7 +1109,6 @@ function ClickableHanziWord({
     };
   }, [text]);
 
-  const chars = Array.from(text);
   const shownIndex = openIndex ?? hoverIndex;
 
   // Belt-and-suspenders dismissal: a native document-level *capture*-phase
@@ -1203,12 +1138,6 @@ function ClickableHanziWord({
     document.addEventListener("click", handleOutsideClick, true);
     return () => document.removeEventListener("click", handleOutsideClick, true);
   }, [shownIndex]);
-  // Only trust a positional word-pinyin match when the syllable count
-  // actually lines up with the character count — otherwise a mismatched
-  // index would confidently show the WRONG reading, worse than showing all
-  // of them (pickReading's own fallback).
-  const syllables = pinyin?.trim().split(/\s+/) ?? [];
-  const syllablesAlign = syllables.length === chars.length;
 
   // Popup itself is portalled to <body>, positioned from the clicked/
   // hovered word's actual screen rect — a plain nested `absolute` span (the
@@ -1258,27 +1187,7 @@ function ClickableHanziWord({
               </span>
             );
           })
-        : chars.map((ch, i) => {
-            const card = hanziByChar.get(ch);
-            if (!card) return <span key={i}>{ch}</span>;
-            return (
-              <span
-                key={i}
-                data-word-lookup-target
-                className={`cursor-pointer rounded transition-colors ${
-                  shownIndex === i ? "bg-blue-200 dark:bg-blue-900/60" : ""
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  showAt(i, "click", e);
-                }}
-                onMouseEnter={(e) => showAt(i, "hover", e)}
-                onMouseLeave={() => setHoverIndex((cur) => (cur === i ? null : cur))}
-              >
-                {ch}
-              </span>
-            );
-          })}
+        : text}
       {/* Portalled (not a plain sibling div) since this component renders
           inline inside <p> elements — a block-level div sibling there would
           be invalid HTML and cause the browser to auto-close the paragraph.
@@ -1288,6 +1197,8 @@ function ClickableHanziWord({
           it. */}
       {shownIndex !== null &&
         popupPos &&
+        segments &&
+        segments[shownIndex] &&
         typeof document !== "undefined" &&
         createPortal(
           <div
@@ -1295,12 +1206,7 @@ function ClickableHanziWord({
             className="fixed z-50 -translate-x-1/2 animate-dropdown-in"
             style={{ top: popupPos.top, left: popupPos.left }}
           >
-            {segments
-              ? segments[shownIndex] && <WordInfoPopup segment={segments[shownIndex]} />
-              : (() => {
-                  const card = hanziByChar.get(chars[shownIndex]);
-                  return card ? <CharInfoPopup card={card} syllable={syllablesAlign ? syllables[shownIndex] : undefined} /> : null;
-                })()}
+            <WordInfoPopup segment={segments[shownIndex]} />
           </div>,
           document.body
         )}
@@ -1595,7 +1501,6 @@ function ReviewSession({
   initialQueue,
   initialPending,
   newTodayIds,
-  hanziByChar,
   onExit,
   onJumpToCard,
   onCardUpdated,
@@ -1603,7 +1508,6 @@ function ReviewSession({
   initialQueue: DueCard[];
   initialPending: { card: DueCard; dueAt: number }[];
   newTodayIds: Set<string>;
-  hanziByChar: Map<string, HanziCard>;
   onExit: () => void;
   onJumpToCard?: (card: { source: DeckKey; dbId: number | string }) => void;
   onCardUpdated?: (source: DeckKey, dbId: number | string, patch: CardStatPatch) => void;
@@ -1983,7 +1887,7 @@ function ReviewSession({
               <div className="inline-grid grid-cols-[1.5rem_auto_1.5rem] items-center gap-2">
                 <span />
                 <p className="text-2xl">
-                  <ClickableHanziWord key={current.id} text={current.front} pinyin={current.sub} hanziByChar={hanziByChar} />
+                  <ClickableHanziWord key={current.id} text={current.front} />
                 </p>
                 {!current.sentenceAudioUrl && <AudioButton src={current.audioUrl} label="Play pronunciation" />}
               </div>
@@ -2084,7 +1988,7 @@ function ReviewSession({
                 {current.sentence && (
                   <div className="pt-6 mt-4 border-t border-zinc-200 dark:border-zinc-800 space-y-1">
                     <p className="text-2xl">
-                      <ClickableHanziWord key={current.id} text={current.sentence} pinyin={current.sentencePinyin} hanziByChar={hanziByChar} />
+                      <ClickableHanziWord key={current.id} text={current.sentence} />
                     </p>
                     {current.sentenceMeaning && <p className="text-2xl">{current.sentenceMeaning}</p>}
                     {current.sentenceAudioUrl && (
@@ -2222,10 +2126,6 @@ export default function FlashcardTab({
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [overviewFor, selectedDeck]);
-
-  // For the per-character popup on a word's review-card header — any
-  // character that's also a hanzi-deck card gets its own pinyin/meaning.
-  const hanziByChar = useMemo(() => new Map(cards.map((c) => [c.character, c])), [cards]);
 
   // Session-limit settings (new cards/day, max reviews/session) live in
   // Supabase, not just localStorage — otherwise phone and desktop each keep
@@ -2522,7 +2422,6 @@ export default function FlashcardTab({
           initialQueue={queue}
           initialPending={pending}
           newTodayIds={newTodayIds}
-          hanziByChar={hanziByChar}
           onExit={() => {
             setSelectedDeck(null);
             setOverviewFor(null);
