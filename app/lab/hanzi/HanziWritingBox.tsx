@@ -254,6 +254,10 @@ export default function HanziWritingBox({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const targetRef = useRef<HTMLDivElement>(null);
   const writerRef = useRef<HanziWriter | null>(null);
+  // Set right after (re)creating/updating writerRef — tells the outline-sync
+  // effect below to skip its very next run, since create()/setCharacter()
+  // already applied the correct initial outline state itself.
+  const justInitializedRef = useRef(false);
   // Reference box: a second, independent HanziWriter instance that just
   // continuously loops the correct stroke-order animation, never in quiz
   // mode — purely a "here's how it's actually drawn" demo alongside the
@@ -707,6 +711,13 @@ export default function HanziWritingBox({
     }
 
     startQuiz(writerRef.current);
+    // The create()/setCharacter() call above already applied the correct
+    // initial showOutline state — tell the outline-sync effect below to
+    // skip its very next run so it doesn't call showOutline()/hideOutline()
+    // on a writer whose character data may not have finished loading yet
+    // (observed to permanently blank the box for a brand-new card, where
+    // traceOutline is already true on first mount).
+    justInitializedRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [character]);
 
@@ -716,6 +727,10 @@ export default function HanziWritingBox({
   // change, so a later prop flip needs this live call to actually show/hide
   // the background character.
   useEffect(() => {
+    if (justInitializedRef.current) {
+      justInitializedRef.current = false;
+      return;
+    }
     const writer = writerRef.current;
     if (!writer) return;
     if (traceOutline) writer.showOutline();
