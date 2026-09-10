@@ -1028,19 +1028,31 @@ type WordSegment = { word: string; entries: WordEntry[] };
 // across every card in a review session shares it, so re-showing a sentence
 // (revisiting a card, or two cards sharing a common word) never re-fetches.
 const wordLookupCache = new Map<string, WordSegment[]>();
+// Separate in-flight map so a prefetch (see ReviewSession's queue-warming
+// effect) and an immediate real use of the same text share one request
+// instead of firing a redundant second fetch for whichever loses the race.
+const wordLookupPending = new Map<string, Promise<WordSegment[] | null>>();
 
 async function fetchWordSegments(text: string): Promise<WordSegment[] | null> {
   const cached = wordLookupCache.get(text);
   if (cached) return cached;
-  try {
-    const res = await fetch(`/api/word-lookup?text=${encodeURIComponent(text)}`);
-    if (!res.ok) return null;
-    const data: { segments: WordSegment[] } = await res.json();
-    wordLookupCache.set(text, data.segments);
-    return data.segments;
-  } catch {
-    return null;
-  }
+  const pending = wordLookupPending.get(text);
+  if (pending) return pending;
+  const promise = (async () => {
+    try {
+      const res = await fetch(`/api/word-lookup?text=${encodeURIComponent(text)}`);
+      if (!res.ok) return null;
+      const data: { segments: WordSegment[] } = await res.json();
+      wordLookupCache.set(text, data.segments);
+      return data.segments;
+    } catch {
+      return null;
+    } finally {
+      wordLookupPending.delete(text);
+    }
+  })();
+  wordLookupPending.set(text, promise);
+  return promise;
 }
 
 // CC-CEDICT-sourced popup for a word not in the user's own hanzi deck (or a
@@ -1563,8 +1575,23 @@ function ReviewSession({
   // network fetch, which shows up as a beat of silence before the voice
   // starts or a pop-in on the picture. Never plays/displays anything itself,
   // just pre-fetches so playback/render is instant once the card is current.
+  // Also warms word-lookup segments (fetchWordSegments already writes into
+  // the shared wordLookupCache, so ClickableHanziWord's own fetch later
+  // just resolves from cache) — this one starts from index 0 (not 1), and a
+  // wider lookahead than audio/pictures, since it covers the *current* card
+  // too: right after opening the app there's nothing to have prefetched yet,
+  // so without this the very first card's lookups pay full latency, which
+  // is exactly the "takes a while before lookup works" complaint this fixes.
   const prefetchedUrls = useRef(new Set<string>()).current;
+  const prefetchedWordLookups = useRef(new Set<string>()).current;
   useEffect(() => {
+    for (const card of queue.slice(0, 6)) {
+      for (const text of [card.front, card.sentence]) {
+        if (!text || prefetchedWordLookups.has(text)) continue;
+        prefetchedWordLookups.add(text);
+        fetchWordSegments(text);
+      }
+    }
     for (const card of queue.slice(1, 4)) {
       for (const url of [card.audioUrl, card.sentenceAudioUrl]) {
         if (!url || prefetchedUrls.has(url)) continue;
@@ -1580,7 +1607,7 @@ function ReviewSession({
         img.src = card.pictureUrl;
       }
     }
-  }, [queue, prefetchedUrls]);
+  }, [queue, prefetchedUrls, prefetchedWordLookups]);
 
 
 
