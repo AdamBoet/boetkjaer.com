@@ -1282,11 +1282,22 @@ function ClickableHanziWord({
           via the mousedown listener below, which can't stop the paired
           click from also bubbling into the card body's tap-to-advance
           handler) so dismissing this popup never also grades/advances the
-          card underneath it. */}
-      {openIndex !== null &&
+          card underneath it. Gated on shownIndex (not just openIndex) since
+          on mobile the popup can also be showing from hoverIndex alone
+          (touch-to-mouse-event emulation doesn't always cleanly register as
+          a click) — without covering that case too, a tap elsewhere while
+          such a popup is up would fall straight through to the card's
+          tap-to-advance handler underneath instead of just closing it. */}
+      {shownIndex !== null &&
         typeof document !== "undefined" &&
         createPortal(
-          <div className="fixed inset-0 z-20" onClick={() => setOpenIndex(null)} />,
+          <div
+            className="fixed inset-0 z-20"
+            onClick={() => {
+              setOpenIndex(null);
+              setHoverIndex(null);
+            }}
+          />,
           document.body
         )}
     </span>
