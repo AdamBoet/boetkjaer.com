@@ -1118,7 +1118,7 @@ function WordInfoPopup({ segment }: { segment: WordSegment }) {
       <div className="space-y-2">
         {segment.entries.map((entry, i) => (
           <div key={i}>
-            <p className="text-xs text-red-500 dark:text-red-400 font-medium leading-snug">{entry.pinyin}</p>
+            <p className="text-xs text-emerald-700 dark:text-emerald-500 font-medium leading-snug">{entry.pinyin}</p>
             <ul className="mt-0.5 space-y-0.5">
               {entry.meaning.split("/").map((sense, j) => (
                 <li key={j} className="text-xs text-zinc-600 dark:text-zinc-300 leading-snug flex gap-1.5">
@@ -1219,7 +1219,7 @@ function ClickableHanziWord({
                   {seg.word}
                 </span>
                 {shownIndex === i && (
-                  <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-20 animate-dropdown-in">
+                  <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-40 animate-dropdown-in">
                     {deckCard ? <CharInfoPopup card={deckCard} syllable={syllable} /> : <WordInfoPopup segment={seg} />}
                   </span>
                 )}
@@ -1245,7 +1245,7 @@ function ClickableHanziWord({
                   {ch}
                 </span>
                 {shownIndex === i && (
-                  <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-20 animate-dropdown-in">
+                  <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-40 animate-dropdown-in">
                     <CharInfoPopup card={card} syllable={syllablesAlign ? syllables[i] : undefined} />
                   </span>
                 )}
