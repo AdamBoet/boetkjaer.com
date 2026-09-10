@@ -1255,6 +1255,7 @@ function ClickableHanziWord({
           <div
             className="fixed z-50 -translate-x-1/2 animate-dropdown-in"
             style={{ top: popupPos.top, left: popupPos.left }}
+            onClick={(e) => e.stopPropagation()}
           >
             {segments
               ? segments[shownIndex] && <WordInfoPopup segment={segments[shownIndex]} />
@@ -1268,22 +1269,24 @@ function ClickableHanziWord({
       {/* Portalled (not a plain sibling div) since this component renders
           inline inside <p> elements — a block-level div sibling there would
           be invalid HTML and cause the browser to auto-close the paragraph.
-          Intercepts the dismissing click itself (rather than just closing
-          via the mousedown listener below, which can't stop the paired
-          click from also bubbling into the card body's tap-to-advance
-          handler) so dismissing this popup never also grades/advances the
-          card underneath it. Gated on shownIndex (not just openIndex) since
-          on mobile the popup can also be showing from hoverIndex alone
-          (touch-to-mouse-event emulation doesn't always cleanly register as
-          a click) — without covering that case too, a tap elsewhere while
-          such a popup is up would fall straight through to the card's
-          tap-to-advance handler underneath instead of just closing it. */}
+          Gated on shownIndex (not just openIndex) since on mobile the
+          popup can also be showing from hoverIndex alone (touch-to-mouse-
+          event emulation doesn't always cleanly register as a click).
+          Must call stopPropagation() — a portal escapes the DOM tree (so
+          it renders outside/on top of everything, which is the whole
+          point), but React's *synthetic* event system still bubbles a
+          click through the React component tree, not the DOM tree, so
+          without this the click keeps going after closing the popup and
+          still reaches the card's tap-to-advance handler underneath,
+          skip-grading the card in the same tap that was meant to just
+          dismiss the popup. */}
       {shownIndex !== null &&
         typeof document !== "undefined" &&
         createPortal(
           <div
             className="fixed inset-0 z-20"
-            onClick={() => {
+            onClick={(e) => {
+              e.stopPropagation();
               setOpenIndex(null);
               setHoverIndex(null);
             }}
