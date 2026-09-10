@@ -1104,6 +1104,15 @@ function ClickableHanziWord({ text }: { text: string }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [segments, setSegments] = useState<WordSegment[] | null>(null);
   const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
+  // Set on a second tap within an already-open multi-character word, to
+  // drill down from the whole word's meaning to just the specific
+  // character tapped (e.g. 结账 shows "to pay the bill" first; tapping 账
+  // again shows just 账's own entries). Index into the OPEN segment's own
+  // characters, not a global position — comparing by index rather than the
+  // character string itself avoids ambiguity when a word repeats a
+  // character (e.g. 谢谢), so only the actual tapped one highlights.
+  const [drillCharIndex, setDrillCharIndex] = useState<number | null>(null);
+  const [drillSegments, setDrillSegments] = useState<WordSegment[] | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1122,6 +1131,22 @@ function ClickableHanziWord({ text }: { text: string }) {
   }, [text]);
 
   const shownIndex = openIndex ?? hoverIndex;
+  const openSeg = openIndex !== null ? segments?.[openIndex] : null;
+  const drillChar = openSeg && drillCharIndex !== null ? Array.from(openSeg.word)[drillCharIndex] : null;
+
+  useEffect(() => {
+    if (!drillChar) {
+      setDrillSegments(null);
+      return;
+    }
+    let cancelled = false;
+    fetchWordSegments(drillChar).then((result) => {
+      if (!cancelled) setDrillSegments(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [drillChar]);
 
   // Belt-and-suspenders dismissal: a native document-level *capture*-phase
   // listener, which runs before the browser even reaches any bubble-phase
@@ -1146,6 +1171,7 @@ function ClickableHanziWord({ text }: { text: string }) {
       e.preventDefault();
       setOpenIndex(null);
       setHoverIndex(null);
+      setDrillCharIndex(null);
     }
     document.addEventListener("click", handleOutsideClick, true);
     return () => document.removeEventListener("click", handleOutsideClick, true);
@@ -1158,7 +1184,15 @@ function ClickableHanziWord({ text }: { text: string }) {
   // the review UI) was creating one, so the popup rendered *under* later
   // page content instead of always on top. Escaping to <body> sidesteps
   // that entirely.
-  function showAt(i: number, kind: "click" | "hover", e: ReactMouseEvent<HTMLElement>) {
+  //
+  // Click behavior on a multi-character segment progressively drills down:
+  // 1st tap opens the whole word; a 2nd tap on any character within that
+  // SAME already-open word switches to that one character's own entries
+  // instead (e.g. 结账 → "to pay the bill" first, then tapping 账 again
+  // shows just 账); tapping the same drilled-into character again backs
+  // back out to the whole-word view. A single-character segment has
+  // nothing to drill into, so it just toggles open/closed as before.
+  function showAt(i: number, localIdx: number, segCharCount: number, kind: "click" | "hover", e: ReactMouseEvent<HTMLElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
     // Popup is centered (translateX(-50%)) on the tapped word by default,
     // which overflows off-screen on a narrow phone when that word sits near
@@ -1172,8 +1206,19 @@ function ClickableHanziWord({ text }: { text: string }) {
       window.innerWidth - halfPopupWidth - margin
     );
     setPopupPos({ top: rect.bottom + 8, left });
-    if (kind === "click") setOpenIndex((cur) => (cur === i ? null : i));
-    else setHoverIndex(i);
+    if (kind === "hover") {
+      setHoverIndex(i);
+      return;
+    }
+    if (openIndex === i && segCharCount > 1) {
+      setDrillCharIndex((cur) => (cur === localIdx ? null : localIdx));
+    } else if (openIndex === i) {
+      setOpenIndex(null);
+      setDrillCharIndex(null);
+    } else {
+      setOpenIndex(i);
+      setDrillCharIndex(null);
+    }
   }
 
   return (
@@ -1181,21 +1226,35 @@ function ClickableHanziWord({ text }: { text: string }) {
       {segments
         ? segments.map((seg, i) => {
             if (seg.entries.length === 0) return <span key={i}>{seg.word}</span>;
+            const segChars = Array.from(seg.word);
             return (
-              <span
-                key={i}
-                data-word-lookup-target
-                className={`cursor-pointer rounded transition-colors ${
-                  shownIndex === i ? "bg-blue-200 dark:bg-blue-900/60" : ""
-                }`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  showAt(i, "click", e);
-                }}
-                onMouseEnter={(e) => showAt(i, "hover", e)}
-                onMouseLeave={() => setHoverIndex((cur) => (cur === i ? null : cur))}
-              >
-                {seg.word}
+              <span key={i}>
+                {segChars.map((ch, localIdx) => {
+                  // Whole word highlighted while it's open with nothing
+                  // drilled into yet; once a specific character is drilled
+                  // into, only that one character stays highlighted.
+                  const highlighted =
+                    openIndex === i && drillCharIndex !== null
+                      ? drillCharIndex === localIdx
+                      : shownIndex === i;
+                  return (
+                    <span
+                      key={localIdx}
+                      data-word-lookup-target
+                      className={`cursor-pointer rounded transition-colors ${
+                        highlighted ? "bg-blue-200 dark:bg-blue-900/60" : ""
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        showAt(i, localIdx, segChars.length, "click", e);
+                      }}
+                      onMouseEnter={(e) => showAt(i, localIdx, segChars.length, "hover", e)}
+                      onMouseLeave={() => setHoverIndex((cur) => (cur === i ? null : cur))}
+                    >
+                      {ch}
+                    </span>
+                  );
+                })}
               </span>
             );
           })
@@ -1206,7 +1265,8 @@ function ClickableHanziWord({ text }: { text: string }) {
           Dismissal itself is handled entirely by the document capture-phase
           listener above — this is just the visible content, with a ref so
           that listener can tell a tap on the popup apart from one outside
-          it. */}
+          it. Shows the drilled-into character's own entries once loaded;
+          until then (or if nothing's drilled into), shows the whole word. */}
       {shownIndex !== null &&
         popupPos &&
         segments &&
@@ -1218,7 +1278,7 @@ function ClickableHanziWord({ text }: { text: string }) {
             className="fixed z-50 -translate-x-1/2 animate-dropdown-in"
             style={{ top: popupPos.top, left: popupPos.left }}
           >
-            <WordInfoPopup segment={segments[shownIndex]} />
+            <WordInfoPopup segment={drillChar && drillSegments?.[0] ? drillSegments[0] : segments[shownIndex]} />
           </div>,
           document.body
         )}
