@@ -1200,7 +1200,18 @@ function ClickableHanziWord({
   // that entirely.
   function showAt(i: number, kind: "click" | "hover", e: ReactMouseEvent<HTMLElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
-    setPopupPos({ top: rect.bottom + 8, left: rect.left + rect.width / 2 });
+    // Popup is centered (translateX(-50%)) on the tapped word by default,
+    // which overflows off-screen on a narrow phone when that word sits near
+    // the left/right edge — clamp so its estimated half-width (the wider of
+    // the two popups, WordInfoPopup's w-64/256px, plus a little slack) never
+    // pushes past either edge.
+    const halfPopupWidth = 140;
+    const margin = 8;
+    const left = Math.min(
+      Math.max(rect.left + rect.width / 2, halfPopupWidth + margin),
+      window.innerWidth - halfPopupWidth - margin
+    );
+    setPopupPos({ top: rect.bottom + 8, left });
     if (kind === "click") setOpenIndex((cur) => (cur === i ? null : i));
     else setHoverIndex(i);
   }
