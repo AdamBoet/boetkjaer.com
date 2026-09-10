@@ -1078,29 +1078,83 @@ function CharInfoPopup({ card, syllable }: { card: HanziCard; syllable?: string 
   );
 }
 
-// Renders a word's characters individually clickable/hoverable — any
-// character that's also a card in the hanzi ("汉字 writing") deck shows a
-// small popup with that character's own pinyin/meaning; characters not in
-// the hanzi deck render as plain text with no interaction at all.
+type WordEntry = { traditional: string; pinyin: string; meaning: string };
+type WordSegment = { word: string; entries: WordEntry[] };
+
+// Module-level (not per-component-instance) cache — every ClickableHanziWord
+// across every card in a review session shares it, so re-showing a sentence
+// (revisiting a card, or two cards sharing a common word) never re-fetches.
+const wordLookupCache = new Map<string, WordSegment[]>();
+
+async function fetchWordSegments(text: string): Promise<WordSegment[] | null> {
+  const cached = wordLookupCache.get(text);
+  if (cached) return cached;
+  try {
+    const res = await fetch(`/api/word-lookup?text=${encodeURIComponent(text)}`);
+    if (!res.ok) return null;
+    const data: { segments: WordSegment[] } = await res.json();
+    wordLookupCache.set(text, data.segments);
+    return data.segments;
+  } catch {
+    return null;
+  }
+}
+
+// CC-CEDICT-sourced popup for a word not in the user's own hanzi deck (or a
+// multi-character word, shown as a whole rather than character-by-character)
+// — a word can have more than one entry (distinct reading + meaning, e.g.
+// 东西 dōngxī "east and west" vs. dōngxi "thing/stuff"), so every entry is
+// shown stacked, same as Pleco/MandarinSpot-style popups.
+function WordInfoPopup({ segment }: { segment: WordSegment }) {
+  const traditional = segment.entries[0]?.traditional;
+  return (
+    <div className="w-64 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl p-3.5 text-sm text-left text-zinc-900 dark:text-zinc-100 space-y-2.5">
+      <p className="text-lg font-medium leading-none">
+        {segment.word}
+        {traditional && traditional !== segment.word && (
+          <span className="text-zinc-400 dark:text-zinc-500 text-sm font-normal ml-1.5">[{traditional}]</span>
+        )}
+      </p>
+      <div className="space-y-2">
+        {segment.entries.map((entry, i) => (
+          <div key={i}>
+            <p className="text-xs text-red-500 dark:text-red-400 font-medium leading-snug">{entry.pinyin}</p>
+            <ul className="mt-0.5 space-y-0.5">
+              {entry.meaning.split("/").map((sense, j) => (
+                <li key={j} className="text-xs text-zinc-600 dark:text-zinc-300 leading-snug flex gap-1.5">
+                  <span className="text-zinc-400 dark:text-zinc-600">•</span>
+                  <span>{sense.trim()}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Renders a word/sentence with each recognized dictionary word clickable —
+// segmented via /api/word-lookup (CC-CEDICT-based, covers ANY word, not
+// just the user's own deck) so a multi-character word is one click target,
+// not split per character. A character/word already in the user's own
+// hanzi ("汉字 writing") deck keeps showing that curated data (their own
+// pronunciation/meaning, including polyphonic disambiguation) instead of
+// the generic dictionary entry. While the segmentation fetch is in flight,
+// or if it fails, falls back to the original per-character hanziByChar-only
+// rendering — never blocks, never regresses.
 function ClickableHanziWord({
   text,
   pinyin,
   hanziByChar,
-  enabled = true,
 }: {
   text: string;
   pinyin?: string;
   hanziByChar: Map<string, HanziCard>;
-  // Word/sentence text doubles as the click target for the pinyin-peek
-  // toggle on idiom/HSK3/random-words cards — a per-character popup click
-  // (which stops propagation) would otherwise swallow that toggle click
-  // whenever the character happens to also be a hanzi-deck card. Only turn
-  // the per-character popup on once pinyin is already expanded, so the two
-  // features never fight over the same click.
-  enabled?: boolean;
 }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [segments, setSegments] = useState<WordSegment[] | null>(null);
   const ref = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -1112,6 +1166,21 @@ function ClickableHanziWord({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [openIndex]);
 
+  useEffect(() => {
+    if (!text) {
+      setSegments(null);
+      return;
+    }
+    setSegments(null);
+    let cancelled = false;
+    fetchWordSegments(text).then((result) => {
+      if (!cancelled) setSegments(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [text]);
+
   const chars = Array.from(text);
   const shownIndex = openIndex ?? hoverIndex;
   // Only trust a positional word-pinyin match when the syllable count
@@ -1121,32 +1190,68 @@ function ClickableHanziWord({
   const syllables = pinyin?.trim().split(/\s+/) ?? [];
   const syllablesAlign = syllables.length === chars.length;
 
+  let charOffset = 0;
+
   return (
     <span ref={ref}>
-      {chars.map((ch, i) => {
-        const card = enabled ? hanziByChar.get(ch) : undefined;
-        if (!card) return <span key={i}>{ch}</span>;
-        return (
-          <span key={i} className="relative inline-block z-30">
-            <span
-              className="cursor-pointer"
-              onClick={(e) => {
-                e.stopPropagation();
-                setOpenIndex((cur) => (cur === i ? null : i));
-              }}
-              onMouseEnter={() => setHoverIndex(i)}
-              onMouseLeave={() => setHoverIndex((cur) => (cur === i ? null : cur))}
-            >
-              {ch}
-            </span>
-            {shownIndex === i && (
-              <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-20 animate-dropdown-in">
-                <CharInfoPopup card={card} syllable={syllablesAlign ? syllables[i] : undefined} />
+      {segments
+        ? segments.map((seg, i) => {
+            const segChars = Array.from(seg.word);
+            const startOffset = charOffset;
+            charOffset += segChars.length;
+            const deckCard = segChars.length === 1 ? hanziByChar.get(seg.word) : undefined;
+            const hasEntries = seg.entries.length > 0;
+            if (!deckCard && !hasEntries) return <span key={i}>{seg.word}</span>;
+            const syllable = syllablesAlign ? syllables[startOffset] : undefined;
+            return (
+              <span key={i} className="relative inline-block z-30">
+                <span
+                  className={`cursor-pointer rounded transition-colors ${
+                    shownIndex === i ? "bg-blue-200 dark:bg-blue-900/60" : ""
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenIndex((cur) => (cur === i ? null : i));
+                  }}
+                  onMouseEnter={() => setHoverIndex(i)}
+                  onMouseLeave={() => setHoverIndex((cur) => (cur === i ? null : cur))}
+                >
+                  {seg.word}
+                </span>
+                {shownIndex === i && (
+                  <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-20 animate-dropdown-in">
+                    {deckCard ? <CharInfoPopup card={deckCard} syllable={syllable} /> : <WordInfoPopup segment={seg} />}
+                  </span>
+                )}
               </span>
-            )}
-          </span>
-        );
-      })}
+            );
+          })
+        : chars.map((ch, i) => {
+            const card = hanziByChar.get(ch);
+            if (!card) return <span key={i}>{ch}</span>;
+            return (
+              <span key={i} className="relative inline-block z-30">
+                <span
+                  className={`cursor-pointer rounded transition-colors ${
+                    shownIndex === i ? "bg-blue-200 dark:bg-blue-900/60" : ""
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setOpenIndex((cur) => (cur === i ? null : i));
+                  }}
+                  onMouseEnter={() => setHoverIndex(i)}
+                  onMouseLeave={() => setHoverIndex((cur) => (cur === i ? null : cur))}
+                >
+                  {ch}
+                </span>
+                {shownIndex === i && (
+                  <span className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-20 animate-dropdown-in">
+                    <CharInfoPopup card={card} syllable={syllablesAlign ? syllables[i] : undefined} />
+                  </span>
+                )}
+              </span>
+            );
+          })}
       {/* Portalled (not a plain sibling div) since this component renders
           inline inside <p> elements — a block-level div sibling there would
           be invalid HTML and cause the browser to auto-close the paragraph.
@@ -1535,16 +1640,6 @@ function ReviewSession({
     }
   }, [queue, prefetchedUrls]);
 
-  // Idiom/saying cards, back side only: pinyin is hidden under a click
-  // toggle (word/sentence text or the arrow beside it) instead of shown
-  // outright.
-  const [pinyinPeeked, setPinyinPeeked] = useState(false);
-  const [sentencePinyinPeeked, setSentencePinyinPeeked] = useState(false);
-  useEffect(() => {
-    setPinyinPeeked(false);
-    setSentencePinyinPeeked(false);
-  }, [current?.id]);
-
 
 
   useEffect(() => {
@@ -1846,33 +1941,7 @@ function ReviewSession({
                 NEW
               </p>
             )}
-            {revealed && current.source === "idioms" && current.sub ? (
-              <div
-                className="group inline-grid grid-cols-[3.25rem_auto_3.25rem] items-center gap-1.5 cursor-pointer"
-                onClick={(e) => { e.stopPropagation(); setPinyinPeeked((p) => !p); }}
-              >
-                <span />
-                <p className="text-2xl">
-                  <ClickableHanziWord key={current.id} text={current.front} pinyin={current.sub} hanziByChar={hanziByChar} enabled={pinyinPeeked} />
-                </p>
-                <div className="flex items-center gap-1.5">
-                  {/* Sentence audio (below) already narrates the word first
-                      once it exists — the standalone word button is only a
-                      fallback for a card that hasn't gotten one yet. */}
-                  {!current.sentenceAudioUrl && <AudioButton src={current.audioUrl} label="Play pronunciation" />}
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    className={`w-4 h-4 shrink-0 text-zinc-400 dark:text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity ${
-                      pinyinPeeked ? "rotate-180" : ""
-                    }`}
-                  >
-                    <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 011.06 0L10 11.94l3.72-3.72a.75.75 0 111.06 1.06l-4.25 4.25a.75.75 0 01-1.06 0L5.22 9.28a.75.75 0 010-1.06z" clipRule="evenodd" />
-                  </svg>
-                </div>
-              </div>
-            ) : revealed && current.source !== "hanzi" ? (
+            {revealed && current.source !== "hanzi" ? (
               <div className="inline-grid grid-cols-[1.5rem_auto_1.5rem] items-center gap-2">
                 <span />
                 <p className="text-2xl">
@@ -1950,11 +2019,8 @@ function ReviewSession({
               <div className="space-y-1.5 text-center">
                 {current.source !== "hanzi" && (current.sub || current.back) && (
                   <div>
-                    {current.source !== "idioms" && current.sub && (
-                      <p className="text-xl text-emerald-700 dark:text-emerald-500">{current.sub}</p>
-                    )}
-                    {current.source === "idioms" && pinyinPeeked && current.sub && (
-                      <p className={`text-xl animate-dropdown-in ${idiomRed ? "text-[#8b0000] dark:text-[#e5484d]" : "text-emerald-700 dark:text-emerald-500"}`}>
+                    {current.sub && (
+                      <p className={`text-xl ${idiomRed ? "text-[#8b0000] dark:text-[#e5484d]" : "text-emerald-700 dark:text-emerald-500"}`}>
                         {current.sub}
                       </p>
                     )}
@@ -1979,36 +2045,9 @@ function ReviewSession({
                 )}
                 {current.sentence && (
                   <div className="pt-6 mt-4 border-t border-zinc-200 dark:border-zinc-800 space-y-1">
-                    {current.source !== "hanzi" && current.sentencePinyin ? (
-                      <div
-                        className="group inline-grid grid-cols-[3.25rem_auto_3.25rem] items-center gap-1.5 cursor-pointer"
-                        onClick={(e) => { e.stopPropagation(); setSentencePinyinPeeked((p) => !p); }}
-                      >
-                        <span />
-                        <p className="text-2xl">
-                          <ClickableHanziWord key={current.id} text={current.sentence} pinyin={current.sentencePinyin} hanziByChar={hanziByChar} enabled={sentencePinyinPeeked} />
-                        </p>
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                          className={`w-4 h-4 shrink-0 text-zinc-400 dark:text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity ${
-                            sentencePinyinPeeked ? "rotate-180" : ""
-                          }`}
-                        >
-                          <path fillRule="evenodd" d="M5.22 8.22a.75.75 0 011.06 0L10 11.94l3.72-3.72a.75.75 0 111.06 1.06l-4.25 4.25a.75.75 0 01-1.06 0L5.22 9.28a.75.75 0 010-1.06z" clipRule="evenodd" />
-                        </svg>
-                      </div>
-                    ) : (
-                      <p className="text-2xl">
-                        <ClickableHanziWord key={current.id} text={current.sentence} pinyin={current.sentencePinyin} hanziByChar={hanziByChar} />
-                      </p>
-                    )}
-                    {sentencePinyinPeeked && current.sentencePinyin && (
-                      <p className={`text-xl animate-dropdown-in ${idiomRed ? "text-[#8b0000] dark:text-[#e5484d]" : "text-emerald-700 dark:text-emerald-500"}`}>
-                        {current.sentencePinyin}
-                      </p>
-                    )}
+                    <p className="text-2xl">
+                      <ClickableHanziWord key={current.id} text={current.sentence} pinyin={current.sentencePinyin} hanziByChar={hanziByChar} />
+                    </p>
                     {current.sentenceMeaning && <p className="text-2xl">{current.sentenceMeaning}</p>}
                     {current.sentenceAudioUrl && (
                       <div className="flex justify-center pt-1">
