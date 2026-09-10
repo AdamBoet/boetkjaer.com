@@ -1156,16 +1156,6 @@ function ClickableHanziWord({
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [segments, setSegments] = useState<WordSegment[] | null>(null);
   const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
-  const ref = useRef<HTMLSpanElement>(null);
-
-  useEffect(() => {
-    if (openIndex === null) return;
-    function handleClickOutside(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpenIndex(null);
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [openIndex]);
 
   useEffect(() => {
     if (!text) {
@@ -1217,7 +1207,7 @@ function ClickableHanziWord({
   }
 
   return (
-    <span ref={ref}>
+    <span>
       {segments
         ? segments.map((seg, i) => {
             if (seg.entries.length === 0) return <span key={i}>{seg.word}</span>;
