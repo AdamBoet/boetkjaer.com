@@ -644,7 +644,7 @@ export default function StatsTab({
         <BarChart
           bars={futureDue.bars}
           barColor="bg-emerald-600 dark:bg-emerald-500"
-          barColorAt={(i) => (i < futureDue.todayIndex ? "bg-rose-500 dark:bg-rose-600" : undefined)}
+          barColorAt={(i) => (i < futureDue.todayIndex ? "bg-red-800/60 dark:bg-red-900/60" : undefined)}
           barOpacity={futureDue.bars.map((_, i) => {
             const spread = Math.max(1, futureDue.todayIndex, futureDue.bars.length - 1 - futureDue.todayIndex);
             return Math.abs(i - futureDue.todayIndex) / spread;
