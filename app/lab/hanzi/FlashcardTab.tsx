@@ -1860,7 +1860,10 @@ function ReviewSession({
         // Swaps whatever's currently drawn for a fresh blank box to trace
         // again, resetting the stroke count — on the front or the back,
         // without giving away the answer.
-        if (revealed) setRedoDrawing(true);
+        if (revealed) {
+          setRedoDrawing(true);
+          if (current.audioUrl) playAudio(current.audioUrl);
+        }
         setRedoAttempt((n) => n + 1);
         return;
       }

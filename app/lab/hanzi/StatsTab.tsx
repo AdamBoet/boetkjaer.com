@@ -98,6 +98,7 @@ function StatTile({ label, value, dot }: { label: string; value: number | string
 function BarChart({
   bars,
   barColor,
+  barColorAt,
   barOpacity,
   height = 140,
   showAllLabels = false,
@@ -105,6 +106,9 @@ function BarChart({
 }: {
   bars: { label: string; value: number; tooltip?: string | string[] }[];
   barColor: string;
+  // Per-bar color override (e.g. Future Due's backlog bars vs. upcoming
+  // bars) — falls back to `barColor` for any index it doesn't cover.
+  barColorAt?: (i: number) => string | undefined;
   barOpacity?: (number | null)[];
   height?: number;
   showAllLabels?: boolean;
@@ -154,7 +158,7 @@ function BarChart({
             onClick={(e) => handleTap(e, i)}
           >
             <div
-              className={`w-full rounded-t-sm transition-opacity ${b.value === 0 ? "bg-zinc-200 dark:bg-zinc-700" : barColor}`}
+              className={`w-full rounded-t-sm transition-opacity ${b.value === 0 ? "bg-zinc-200 dark:bg-zinc-700" : (barColorAt?.(i) ?? barColor)}`}
               style={{
                 height: `${b.value === 0 ? 2 : Math.max(2, (b.value / max) * 100)}%`,
                 opacity: b.value === 0 ? undefined : hover === i ? 1 : opacity,
@@ -363,7 +367,7 @@ export default function StatsTab({
   wordsPhrases: WordPhrase[];
 }) {
   const [horizon, setHorizon] = useState<Horizon>("1m");
-  const [includeBacklog, setIncludeBacklog] = useState(false);
+  const [includeBacklog, setIncludeBacklog] = useState(true);
   const [deckFilter, setDeckFilter] = useState<DeckKey | "all">("all");
 
   // Today/Calendar/Hourly/Answer-buttons come from a background-computed
@@ -640,6 +644,7 @@ export default function StatsTab({
         <BarChart
           bars={futureDue.bars}
           barColor="bg-emerald-600 dark:bg-emerald-500"
+          barColorAt={(i) => (i < futureDue.todayIndex ? "bg-rose-500 dark:bg-rose-600" : undefined)}
           barOpacity={futureDue.bars.map((_, i) => {
             const spread = Math.max(1, futureDue.todayIndex, futureDue.bars.length - 1 - futureDue.todayIndex);
             return Math.abs(i - futureDue.todayIndex) / spread;
