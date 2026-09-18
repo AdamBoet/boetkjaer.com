@@ -1,26 +1,41 @@
 """
-Daily Kokoro-voiced refresh for cards due today, across:
-  - hsk3_words (HSK 3.0 deck): fresh generative-AI sentence + translation
-  - words_phrases, source in (random_words, idioms): same, fresh sentence
-  - hanzi_cards: NO generative AI — 3 real example words picked from the
-    same frequency-tiered `hanzi` npm data tools/hanzi_lookup.js already
-    uses during card authoring, just narrated in the Kokoro voice.
+Daily Kokoro-voiced refresh for cards due today, across hsk3_words,
+words_phrases (source in random_words/idioms), and hanzi_cards.
 
 Runs locally (via launchd, see com.adam.hanzi-sentence-refresh.plist) since
 Kokoro/llama-cpp-python are too heavy to bundle into a Vercel serverless
 function (~500MB limit) — see /Users/adam/.claude/plans/radiant-crunching-avalanche.md.
 
-For hsk3_words/words_phrases, each due card whose sentence predates its last
-review gets:
-  1. One natural Mandarin sentence containing the word/idiom, from a local
-     Qwen2.5-1.5B-Instruct GGUF model (llama-cpp-python) — no API key.
-  2. An English translation (also via Qwen2.5).
-  3. Word-grouped pinyin (jieba + pypinyin), matching the existing
-     capitalized "Tā xǐhuan kànshū." style already used on these decks.
-  4. Kokoro-voiced audio of the word, then the sentence.
+Three tiers do the actual content work, split by what each is capable of —
+keep this list in sync with reality, since it's the one place documenting
+how they fit together:
 
-For hanzi_cards, each due card whose word list predates its last review
-gets 3 randomly-picked real example words (no LLM) narrated in sequence.
+1. THIS SCRIPT (local, no research/judgment capability, but the only place
+   that can run Kokoro TTS or the local `hanzi` npm/CC-CEDICT corpus):
+     - hsk3_words/words_phrases: pinyin (jieba + pypinyin) + audio for
+       whatever sentence text is already there (refresh_hsk3,
+       refresh_words_phrases) — NOT the sentence text itself (see tier 2).
+     - hanzi_cards: daily_words (3 real, frequency-tiered example words via
+       tools/hanzi_lookup.js, no generative AI — deliberately mechanical,
+       already reliable) + a mechanical first-draft `pronunciation`/`front`/
+       `components` for brand-new cards (see tier 3) + all TTS audio.
+     - A local Qwen2.5-1.5B-Instruct GGUF model (llama-cpp-python, no API
+       key) is used in exactly two bootstrap spots — replenish_hsk3_new_cards
+       and process_screenshot_queue — to give a BRAND NEW card (reps=0)
+       some sentence text immediately, since tier 2's routine only looks at
+       reps>0 rows and would otherwise leave it blank for a while. Nowhere
+       else in this file calls the local model anymore.
+
+2. "Mandarin sentence generation" cloud routine (Claude, via the Supabase
+   MCP connector, on the user's subscription — not an API call from here):
+   writes fresh sentence + translation text for due hsk3_words/words_phrases
+   cards, nightly.
+
+3. "Hanzi card authoring review" cloud routine (same mechanism): reviews
+   every hanzi_cards row not yet marked `pronunciation_checked_at` — new or
+   backlog — and fixes `pronunciation`/`front`/`components` with actual
+   research (web search), which this script's mechanical CC-CEDICT parsing
+   can't do (see build_pronunciation_and_front's docstring for why).
 
 Usage:
     python3 daily_refresh.py            # process all due cards, all decks
@@ -587,6 +602,30 @@ def parse_readings(pronunciation: str) -> list[str]:
     return [g.split(",")[-1].strip().lower() for g in pronunciation.split(" / ") if g.strip()]
 
 
+# CC-CEDICT tags register/rarity directly in the definition text, the same
+# way it tags proper nouns via capitalized pinyin — e.g. 都督's definition is
+# "(army) commander-in-chief (archaic)/...". It also marks a purely secondary
+# reading as a cross-reference to the "real" entry with no content of its
+# own — either "see X[Y]" (e.g. 熟's shou2: "see 熟[shu2]") or "(archaic
+# |old )?variant of X[Y]" (e.g. 女's ru3: "archaic variant of 汝[ru3]") —
+# shú/nǚ are the actual common readings in both cases. Shared by both
+# pick_example_words (filtering candidate example words) and
+# build_pronunciation_and_front (filtering readings).
+_RARITY_MARKERS = ("(archaic)", "(dialect)", "(literary)", "(old)", "old term for", "old name for")
+_CROSS_REF_RE = re.compile(r"(?:^see |\bvariant of )\S+\[[^\]]+\]$")
+
+
+def _is_rare_sense(sense: str) -> bool:
+    sense = sense.strip()
+    if any(marker in sense for marker in _RARITY_MARKERS):
+        return True
+    return bool(_CROSS_REF_RE.search(sense))
+
+
+def _is_rare_definition(definition: str) -> bool:
+    return any(_is_rare_sense(sense) for sense in definition.split("/"))
+
+
 def pick_example_words(character: str, count: int = 3, pronunciation: str = "") -> list[list[tuple[str, str]]]:
     """No generative AI here — real, frequency-tiered example words (with
     their dictionary definitions) from the same `hanzi` npm data
@@ -612,14 +651,6 @@ def pick_example_words(character: str, count: int = 3, pronunciation: str = "") 
         check=True,
     )
     data = json.loads(result.stdout)[character]
-
-    # CC-CEDICT tags register/rarity directly in the definition text, the
-    # same way it tags proper nouns via capitalized pinyin — e.g. 都督's
-    # definition is "(army) commander-in-chief (archaic)/...". A lower tier
-    # (used whenever a character's higher tiers don't yield enough non-proper
-    # nouns) can otherwise mix genuinely common words with archaic/literary
-    # ones indiscriminately, since both are just "not a proper noun."
-    _RARITY_MARKERS = ("(archaic)", "(dialect)", "(literary)", "(old)", "old term for", "old name for")
 
     # daily_words displays each pair as "word (meaning)" — a definition that
     # already has its own parenthetical (e.g. 陪都's "provisional capital of
@@ -686,7 +717,7 @@ def pick_example_words(character: str, count: int = 3, pronunciation: str = "") 
                 continue
             if not (proper_ok or not item["pinyin"][:1].isupper()):
                 continue
-            if any(marker in item["definition"] for marker in _RARITY_MARKERS):
+            if _is_rare_definition(item["definition"]):
                 continue
             meaning = first_clean_sense(item["definition"])
             if meaning is None:
@@ -786,10 +817,30 @@ def refresh_hanzi(limit=None, settings=None):
     voice = get_setting(settings, "hanzi", "voice")
     cards = sb_select_all(
         "hanzi_cards",
-        "select=note_id,character,pronunciation,mod,interval,reps,type,daily_words_generated_at",
+        "select=note_id,character,pronunciation,mod,interval,reps,type,daily_words_generated_at,pronunciation_checked_at",
     )
     due_today_count = sum(1 for c in cards if is_due_today(c))
-    due = [c for c in cards if is_due_today(c) and needs_refresh(c, "daily_words_generated_at")]
+    # daily_words is grouped one-group-per-reading (pick_example_words), so
+    # a reading getting dropped/added by the nightly "Hanzi pronunciation
+    # commonality check" routine can leave it out of sync with the current
+    # pronunciation field — e.g. 熟 down to one reading but daily_words
+    # still showing two groups from when it had two. That's a content
+    # mismatch, not a review-schedule event, so it's refreshed independent
+    # of is_due_today/needs_refresh whenever pronunciation_checked_at is
+    # newer than the last daily_words generation.
+    def pronunciation_rechecked_since_words(c):
+        checked = c.get("pronunciation_checked_at")
+        generated = c.get("daily_words_generated_at")
+        if not checked:
+            return False
+        if not generated:
+            return True
+        return datetime.fromisoformat(checked.replace("Z", "+00:00")) > datetime.fromisoformat(generated.replace("Z", "+00:00"))
+
+    due = [
+        c for c in cards
+        if (is_due_today(c) and needs_refresh(c, "daily_words_generated_at")) or pronunciation_rechecked_since_words(c)
+    ]
     if limit is not None:
         due = due[:limit]
     print(f"hanzi_cards: {due_today_count} due today, {len(due)} need fresh words.")
@@ -832,11 +883,20 @@ def refresh_hanzi(limit=None, settings=None):
 # runs low. These two functions top the pool back up to that same target
 # during the nightly run: hanzi picks up the next character in frequency-
 # rank order, hsk3 introduces the next word in lowest-to-highest level
-# order. Per an explicit instruction, hanzi card authoring here is
-# deliberately mechanical (no LLM "judgment calls" replicating the
-# meaning-pruning/component-selection rules in docs/rules.md that a human
-# normally applies) — lower fidelity than hand-curated cards, fixable later
-# by hand-editing the card directly on the site.
+# order.
+#
+# Hanzi card authoring here is deliberately mechanical — no LLM judgment
+# calls (the meaning-pruning/component-selection rules a human author used
+# to apply by hand, formerly docs/rules.md, retired 2026-09-09) — because
+# this Python code has no access to real research, only whatever CC-CEDICT/
+# the local `hanzi` npm package hands back. That's fine: a freshly created
+# row is a first draft, not the final card. The "Hanzi card authoring
+# review" nightly cloud routine (Supabase MCP + web search, not an API call
+# from here) is the actual authoring step — it reviews every card (new or
+# backlog) not yet marked `pronunciation_checked_at` and fixes exactly the
+# things this mechanical construction can't: genuine reading commonality,
+# the surname-reading-listed-first bug, cross-reference glosses that need
+# resolving to a real meaning, and component phrasing/meaning quality.
 
 def lookup_at_rank(rank: int) -> dict:
     result = subprocess.run(
@@ -850,36 +910,67 @@ def lookup_at_rank(rank: int) -> dict:
 
 
 def build_pronunciation_and_front(definitions: list[dict]) -> tuple[str, str]:
-    """Mechanical construction, no merging/pruning judgment — see module
-    comment above. A reading whose pinyin starts uppercase is a surname/
-    proper-noun sense (same convention as pick_example_words) and is
-    excluded by default — but a character in the frequency corpus that
-    happens to have ONLY a surname reading (e.g. 宋 — rank 988, whose only
-    CC-CEDICT entry is "Song4") still gets a card rather than being skipped
-    entirely, falling back to including it. Never silently drop a character
-    the corpus considered common enough to include at all."""
+    """Mechanical construction — every non-proper-noun reading the corpus
+    has for this character is kept here, with no rarity judgment at all. An
+    automated substring/regex rarity check (an earlier version of this
+    function had one) can't tell a reading that's genuinely rare from one
+    that's just a CC-CEDICT cross-reference to a common compound word — e.g.
+    同's tong4 is literally defined as "see 衚衕|胡同[hu2 tong4]", which reads
+    exactly like 熟's "see 熟[shu2]" cross-reference to a pattern-matcher,
+    but 胡同 (hútòng, "alleyway") is an everyday word while 熟's other
+    reading is genuine noise — no regex can tell those apart. That judgment
+    (worth studying or not, and writing a clean gloss when CC-CEDICT's own
+    text is just a cross-reference pointer) is made deliberately by the
+    "Hanzi card authoring review" cloud routine instead — it researches each
+    reading (web search, not just recall) rather than pattern-matching
+    CC-CEDICT's tags, and runs nightly against every not-yet-reviewed card
+    via the Supabase MCP connector, not an API call from here.
+
+    A reading whose pinyin starts uppercase is a surname/proper-noun sense
+    (same convention as pick_example_words) and is excluded by default —
+    but a character in the frequency corpus that happens to have ONLY a
+    surname reading (e.g. 宋 — rank 988, whose only CC-CEDICT entry is
+    "Song4") still gets a card rather than being skipped entirely, falling
+    back to including it. Never silently drop a character the corpus
+    considered common enough to include at all."""
     def extract(only_non_proper: bool) -> tuple[list[str], list[str]]:
-        pron_parts, front_parts = [], []
-        # CC-CEDICT sometimes carries more than one entry for the exact same
-        # reading (e.g. 宁's "ning2: peaceful/rather" and a separate "ning2:
-        # peaceful") — without this, the mechanical construction below
-        # would emit the same pinyin/gloss twice. Keep only the first
-        # definition seen per distinct reading.
-        seen_pinyin = set()
+        # CC-CEDICT can carry several separate entries for the exact same
+        # reading (e.g. 系's xi4 has four, one of them tagged "(literary)")
+        # — picking one entry at a time in raw order used to permanently
+        # mark that reading "seen" the moment the FIRST entry was tried,
+        # silently discarding every entry that followed for the same
+        # reading even when a later one had a cleaner gloss to offer. Group
+        # by reading first, so every entry sharing a reading gets a chance
+        # to contribute its best gloss. CC-CEDICT also writes ü as "u:"
+        # (e.g. 女's nu:3) — normalize to pypinyin's "v" convention before
+        # it's used anywhere, or to_tone renders it as a broken "nǔ:"
+        # instead of "nǚ".
+        groups: dict[str, list[dict]] = {}
+        order: list[str] = []
+        display_py: dict[str, str] = {}
         for d in definitions:
-            py = d["pinyin"]
+            py = d["pinyin"].replace("u:", "v").replace("U:", "V")
             if only_non_proper and py[:1].isupper():
                 continue
             py_key = py.lower()
-            if py_key in seen_pinyin:
-                continue
-            seen_pinyin.add(py_key)
-            senses = [s.strip() for s in d["definition"].split("/")]
-            # A proper-noun reading's own definition often leads with the
-            # surname sense (e.g. "surname Song/the Song dynasty...") —
-            # prefer a non-surname sense as the card's actual meaning when
-            # one exists, rather than surfacing just "surname X".
-            gloss = next((s for s in senses if not s.lower().startswith("surname")), senses[0])
+            if py_key not in groups:
+                groups[py_key] = []
+                order.append(py_key)
+                display_py[py_key] = py
+            groups[py_key].append(d)
+
+        pron_parts, front_parts = [], []
+        for py_key in order:
+            # Prefer a non-surname, non-rare-tagged sense as the displayed
+            # gloss (readability only — this never excludes the reading
+            # itself, just picks a better sense to show when one exists),
+            # falling back to just non-surname, then to the first sense
+            # outright (e.g. 宋, whose only sense is "surname Song").
+            all_senses = [s.strip() for d in groups[py_key] for s in d["definition"].split("/")]
+            gloss = next((s for s in all_senses if not s.lower().startswith("surname") and not _is_rare_sense(s)), None)
+            if gloss is None:
+                gloss = next((s for s in all_senses if not s.lower().startswith("surname")), all_senses[0])
+            py = display_py[py_key]
             pron_parts.append(f"{to_tone(py)}, {py}")
             front_parts.append(f"{py.rstrip('0123456789')} ({gloss})")
         return pron_parts, front_parts
