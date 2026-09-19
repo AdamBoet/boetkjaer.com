@@ -423,6 +423,15 @@ def concat_with_pauses(texts: list[str], voice: str = DEFAULT_SETTINGS["voice"],
     return np.concatenate(parts)
 
 
+def spoken_word(word: str) -> str:
+    """The part of a card's word that should actually be voiced. A word can
+    carry a study annotation in parentheses — "部 (m.w)", "花 (verb)" — that
+    is essential on the card but must not be read aloud (Kokoro spells out
+    "m.w"). Falls back to the original if stripping would leave nothing."""
+    stripped = re.sub(r"\s*[(（][^)）]*[)）]", "", word).strip()
+    return stripped or word
+
+
 def generate_audio_url(word: str, sentence: str, path_prefix: str, key: str, voice: str = DEFAULT_SETTINGS["voice"]) -> str:
     """One clip: the word on its own, a pause, then the full sentence —
     replaces reliance on the old (non-Kokoro) word-only pronunciation audio,
@@ -431,7 +440,7 @@ def generate_audio_url(word: str, sentence: str, path_prefix: str, key: str, voi
     sentence, so the standalone word is slowed down slightly to compensate.
     0.9 is a measured floor — anything below it (tested 0.8, 0.85) makes
     Kokoro stutter the first syllable of a short word (e.g. "zh-zhaopin")."""
-    return upload_wav(concat_with_pauses([word, sentence], voice, speeds=[0.9, 1.0]), path_prefix, key)
+    return upload_wav(concat_with_pauses([spoken_word(word), sentence], voice, speeds=[0.9, 1.0]), path_prefix, key)
 
 
 def generate_word_list_audio(words: list[str], path_prefix: str, key: str, voice: str = DEFAULT_SETTINGS["voice"]) -> str:
