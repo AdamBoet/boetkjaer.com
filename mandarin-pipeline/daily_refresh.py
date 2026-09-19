@@ -681,7 +681,10 @@ def pick_example_words(character: str, count: int = 3, pronunciation: str = "") 
                 break
         words = meaning.split()
         if len(words) <= 4:
-            return meaning
+            # A short gloss can still be a raw CC-CEDICT cross-reference like
+            # 中纪委's "abbr. for 中共中央紀律檢查委員會|中共中央纪律检查委员会" —
+            # Chinese characters in the English gloss are never acceptable.
+            return None if _CJK_RE.search(meaning) else meaning
         name_words: list[str] = []
         for w in words:
             if w[:1].isupper():
