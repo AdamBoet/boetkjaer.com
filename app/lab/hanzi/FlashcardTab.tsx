@@ -9,6 +9,7 @@ import HanziWritingBox from "./HanziWritingBox";
 import { TrackpadModeProvider, useTrackpadModeContext } from "./TrackpadModeContext";
 import { GridPrefProvider, useGridPref } from "./GridPrefContext";
 import ScreenshotUploadButton from "./ScreenshotUploadButton";
+import { parseComponents, lookupKey, pickPinyin, type ComponentPart } from "./components-parse";
 
 export interface WordPhrase {
   note_id: number;
@@ -1286,6 +1287,151 @@ function ClickableHanziWord({ text }: { text: string }) {
   );
 }
 
+function ComponentInfoPopup({ char, pinyin, meaning }: { char: string; pinyin: string; meaning: string | null }) {
+  return (
+    <div className="max-w-[14rem] rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl px-3 py-2 text-left text-zinc-900 dark:text-zinc-100">
+      <p className="flex items-baseline gap-2">
+        <span className="text-lg font-medium leading-none">{char}</span>
+        {pinyin && <span className="text-xs text-emerald-700 dark:text-emerald-500 font-medium">{pinyin}</span>}
+      </p>
+      {meaning && <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300 leading-snug">{meaning}</p>}
+    </div>
+  );
+}
+
+// A card's "components" line ("氵 (water), 青 (green; blue)") with each
+// component hoverable/tappable for its pinyin + meaning. The meaning shown is
+// the one already written on the card; only the pinyin is looked up, via the
+// same cached /api/word-lookup as ClickableHanziWord (radical variants like 氵
+// are looked up under the full character they stand for). Deliberately a
+// sibling of ClickableHanziWord rather than sharing its state — same popup
+// placement and document capture-phase dismissal (see that component for why
+// a portalled overlay doesn't work here), but its own marker attribute so
+// only one of the two popups is ever open at a time.
+function ComponentsLine({ components }: { components: string }) {
+  const parts = useMemo(() => parseComponents(components), [components]);
+  const [lookups, setLookups] = useState<Record<string, WordEntry[]>>({});
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
+  const popupRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLookups({});
+    for (const p of parts) {
+      if (p.kind !== "component") continue;
+      const key = lookupKey(p.char);
+      fetchWordSegments(key).then((segments) => {
+        if (cancelled || !segments) return;
+        setLookups((cur) => ({ ...cur, [key]: segments.length === 1 ? segments[0].entries : [] }));
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [parts]);
+
+  const shownIndex = openIndex ?? hoverIndex;
+
+  useEffect(() => {
+    if (shownIndex === null) return;
+    function handleOutsideClick(e: MouseEvent) {
+      const target = e.target as Node;
+      if (popupRef.current?.contains(target)) return;
+      if (target instanceof Element) {
+        if (target.closest("[data-component-lookup-target]")) return;
+        if (target.closest("[data-word-lookup-target]")) {
+          setOpenIndex(null);
+          setHoverIndex(null);
+          return;
+        }
+      }
+      e.stopPropagation();
+      e.preventDefault();
+      setOpenIndex(null);
+      setHoverIndex(null);
+    }
+    document.addEventListener("click", handleOutsideClick, true);
+    return () => document.removeEventListener("click", handleOutsideClick, true);
+  }, [shownIndex]);
+
+  function infoFor(p: Extract<ComponentPart, { kind: "component" }>) {
+    const entries = lookups[lookupKey(p.char)] ?? [];
+    const fallback = entries.find((e) => !/^[A-Z]/.test(e.pinyin)) ?? entries[0];
+    return {
+      pinyin: pickPinyin(entries, p.meaning),
+      meaning: p.meaning ?? fallback?.meaning.split("/")[0].trim() ?? null,
+    };
+  }
+
+  function showAt(i: number, kind: "click" | "hover", e: ReactMouseEvent<HTMLElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const halfPopupWidth = 112;
+    const margin = 8;
+    const left = Math.min(
+      Math.max(rect.left + rect.width / 2, halfPopupWidth + margin),
+      window.innerWidth - halfPopupWidth - margin
+    );
+    setPopupPos({ top: rect.bottom + 8, left });
+    if (kind === "hover") {
+      setHoverIndex(i);
+    } else if (openIndex === i) {
+      // On touch a tap also fires mouseenter, so clear the hover too or the
+      // popup would stay up after the toggle-off tap.
+      setOpenIndex(null);
+      setHoverIndex(null);
+    } else {
+      setOpenIndex(i);
+    }
+  }
+
+  const shown = shownIndex !== null ? parts[shownIndex] : undefined;
+  const shownComponent = shown?.kind === "component" ? shown : null;
+  const shownInfo = shownComponent ? infoFor(shownComponent) : null;
+
+  return (
+    <span>
+      {parts.map((p, i) => {
+        if (p.kind === "text") return <span key={i}>{p.text}</span>;
+        const { pinyin, meaning } = infoFor(p);
+        if (!pinyin && !meaning) return <span key={i}>{p.raw}</span>;
+        return (
+          <span
+            key={i}
+            data-component-lookup-target
+            className={`cursor-pointer rounded transition-colors ${
+              shownIndex === i ? "bg-blue-200 dark:bg-blue-900/60" : ""
+            }`}
+            onClick={(e) => {
+              e.stopPropagation();
+              showAt(i, "click", e);
+            }}
+            onMouseEnter={(e) => showAt(i, "hover", e)}
+            onMouseLeave={() => setHoverIndex((cur) => (cur === i ? null : cur))}
+          >
+            {p.raw}
+          </span>
+        );
+      })}
+      {shownComponent &&
+        shownInfo &&
+        popupPos &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={popupRef}
+            className="fixed z-50 -translate-x-1/2 animate-dropdown-in"
+            style={{ top: popupPos.top, left: popupPos.left }}
+          >
+            <ComponentInfoPopup char={shownComponent.char} pinyin={shownInfo.pinyin} meaning={shownInfo.meaning} />
+          </div>,
+          document.body
+        )}
+    </span>
+  );
+}
+
 export function EditPanel({
   card,
   onClose,
@@ -1646,7 +1792,7 @@ function ReviewSession({
   const prefetchedWordLookups = useRef(new Set<string>()).current;
   useEffect(() => {
     for (const card of queue.slice(0, 6)) {
-      for (const text of [card.front, card.sentence]) {
+      for (const text of [card.front, card.sentence, card.dailyWords]) {
         if (!text || prefetchedWordLookups.has(text)) continue;
         prefetchedWordLookups.add(text);
         fetchWordSegments(text);
@@ -2012,7 +2158,7 @@ function ReviewSession({
                     showHeader={false}
                     showReference={false}
                     traceOutline
-                    mobileComponents={current.components}
+                    mobileComponents={current.components ? <ComponentsLine components={current.components} /> : undefined}
                   />
                 ) : (
                   // Same instance stays mounted across the flip — whatever
@@ -2030,7 +2176,9 @@ function ReviewSession({
                     showReference={false}
                     traceOutline={current.isNew || revealed}
                     onComplete={handleWriteComplete}
-                    mobileComponents={current.isNew || revealed ? current.components : undefined}
+                    mobileComponents={
+                      (current.isNew || revealed) && current.components ? <ComponentsLine components={current.components} /> : undefined
+                    }
                   />
                 )}
               </div>
@@ -2043,7 +2191,7 @@ function ReviewSession({
               // (above its Hint button) — always hide this copy there to
               // avoid showing it twice.
               <p className="mt-1.5 text-sm text-zinc-500 dark:text-zinc-400 text-center hidden md:block">
-                {current.components}
+                <ComponentsLine components={current.components} />
               </p>
             )}
 
@@ -2063,7 +2211,9 @@ function ReviewSession({
                 )}
                 {current.source === "hanzi" ? (
                   current.dailyWords && (
-                    <p className="mt-6 text-2xl whitespace-pre-line">{current.dailyWords}</p>
+                    <p className="mt-6 text-2xl whitespace-pre-line">
+                      <ClickableHanziWord key={current.id} text={current.dailyWords} />
+                    </p>
                   )
                 ) : (
                   current.examples && (

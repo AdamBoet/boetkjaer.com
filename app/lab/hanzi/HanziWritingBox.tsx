@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import HanziWriter from "hanzi-writer";
 import { useTrackpadModeContext, TRACKPAD_CHANGED_EVENT } from "./TrackpadModeContext";
 import { useGridPref } from "./GridPrefContext";
@@ -241,7 +241,7 @@ export default function HanziWritingBox({
   showHeader?: boolean;
   pronunciation?: string;
   /** Components text (e.g. "者 (person; one who), 阝 (town radical)"), shown above the mobile Hint button — on desktop this renders separately, below the whole box. */
-  mobileComponents?: string;
+  mobileComponents?: ReactNode;
   front?: string;
   rank?: number;
   /** Extra hotkey rows to list alongside T/S/H — e.g. the caller's own ←/→ navigation. */
