@@ -1022,6 +1022,26 @@ export function AudioButton({ src, label }: { src?: string | null; label: string
   );
 }
 
+type PopupPos = { left: number; top: number; maxHeight: number };
+
+// Where a lookup popup goes relative to the word that opened it. Always
+// directly below the word (never above), centered on it and clamped so its
+// estimated half-width never pushes past either screen edge (the popup is
+// translateX(-50%)). Its height is capped to the room left below the word —
+// the popup scrolls inside that cap, so a word with a very long sense list can
+// never run off the screen. The 80px floor only matters for a word sitting
+// right at the bottom edge, where a sliver of a popup would be useless.
+function popupPlacement(rect: DOMRect, halfWidth: number): PopupPos {
+  const gap = 8;
+  const margin = 8;
+  const left = Math.min(
+    Math.max(rect.left + rect.width / 2, halfWidth + margin),
+    window.innerWidth - halfWidth - margin
+  );
+  const below = window.innerHeight - rect.bottom - gap - margin;
+  return { left, top: rect.bottom + gap, maxHeight: Math.max(below, 80) };
+}
+
 type WordEntry = { traditional: string; pinyin: string; meaning: string };
 type WordSegment = { word: string; entries: WordEntry[] };
 
@@ -1061,10 +1081,13 @@ async function fetchWordSegments(text: string): Promise<WordSegment[] | null> {
 // — a word can have more than one entry (distinct reading + meaning, e.g.
 // 东西 dōngxī "east and west" vs. dōngxi "thing/stuff"), so every entry is
 // shown stacked, same as Pleco/MandarinSpot-style popups.
-function WordInfoPopup({ segment }: { segment: WordSegment }) {
+function WordInfoPopup({ segment, maxHeight }: { segment: WordSegment; maxHeight?: number }) {
   const traditional = segment.entries[0]?.traditional;
   return (
-    <div className="w-64 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl p-3.5 text-sm text-left text-zinc-900 dark:text-zinc-100 space-y-2.5">
+    <div
+      className="w-64 overflow-y-auto overscroll-contain rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl p-3.5 text-sm text-left text-zinc-900 dark:text-zinc-100 space-y-2.5"
+      style={{ maxHeight }}
+    >
       <p className="text-lg font-medium leading-none">
         {segment.word}
         {traditional && traditional !== segment.word && (
@@ -1104,7 +1127,7 @@ function ClickableHanziWord({ text }: { text: string }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [segments, setSegments] = useState<WordSegment[] | null>(null);
-  const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
+  const [popupPos, setPopupPos] = useState<PopupPos | null>(null);
   // Set on a second tap within an already-open multi-character word, to
   // drill down from the whole word's meaning to just the specific
   // character tapped (e.g. 结账 shows "to pay the bill" first; tapping 账
@@ -1194,19 +1217,13 @@ function ClickableHanziWord({ text }: { text: string }) {
   // back out to the whole-word view. A single-character segment has
   // nothing to drill into, so it just toggles open/closed as before.
   function showAt(i: number, localIdx: number, segCharCount: number, kind: "click" | "hover", e: ReactMouseEvent<HTMLElement>) {
+    // A popup opened by a click stays pinned where it was pressed — hovering
+    // other words must not drag it around (the content is already pinned to
+    // openIndex, only the position would follow the pointer).
+    if (kind === "hover" && openIndex !== null) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    // Popup is centered (translateX(-50%)) on the tapped word by default,
-    // which overflows off-screen on a narrow phone when that word sits near
-    // the left/right edge — clamp so its estimated half-width (the wider of
-    // the two popups, WordInfoPopup's w-64/256px, plus a little slack) never
-    // pushes past either edge.
-    const halfPopupWidth = 140;
-    const margin = 8;
-    const left = Math.min(
-      Math.max(rect.left + rect.width / 2, halfPopupWidth + margin),
-      window.innerWidth - halfPopupWidth - margin
-    );
-    setPopupPos({ top: rect.bottom + 8, left });
+    // 140 = half of WordInfoPopup's w-64 (256px) plus a little slack.
+    setPopupPos(popupPlacement(rect, 140));
     if (kind === "hover") {
       setHoverIndex(i);
       return;
@@ -1279,7 +1296,10 @@ function ClickableHanziWord({ text }: { text: string }) {
             className="fixed z-50 -translate-x-1/2 animate-dropdown-in"
             style={{ top: popupPos.top, left: popupPos.left }}
           >
-            <WordInfoPopup segment={drillChar && drillSegments?.[0] ? drillSegments[0] : segments[shownIndex]} />
+            <WordInfoPopup
+              segment={drillChar && drillSegments?.[0] ? drillSegments[0] : segments[shownIndex]}
+              maxHeight={popupPos.maxHeight}
+            />
           </div>,
           document.body
         )}
@@ -1287,9 +1307,21 @@ function ClickableHanziWord({ text }: { text: string }) {
   );
 }
 
-function ComponentInfoPopup({ char, pinyin, meaning }: { char: string; pinyin: string; meaning: string | null }) {
+function ComponentInfoPopup({
+  char,
+  pinyin,
+  meaning,
+  maxHeight,
+}: {
+  char: string;
+  pinyin: string;
+  meaning: string | null;
+  maxHeight?: number;
+}) {
   return (
-    <div className="max-w-[14rem] rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl px-3 py-2 text-left text-zinc-900 dark:text-zinc-100">
+    <div
+      style={{ maxHeight }}
+      className="max-w-[14rem] overflow-y-auto overscroll-contain rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl px-3 py-2 text-left text-zinc-900 dark:text-zinc-100">
       <p className="flex items-baseline gap-2">
         <span className="text-lg font-medium leading-none">{char}</span>
         {pinyin && <span className="text-xs text-emerald-700 dark:text-emerald-500 font-medium">{pinyin}</span>}
@@ -1313,7 +1345,7 @@ function ComponentsLine({ components }: { components: string }) {
   const [lookups, setLookups] = useState<Record<string, WordEntry[]>>({});
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-  const [popupPos, setPopupPos] = useState<{ top: number; left: number } | null>(null);
+  const [popupPos, setPopupPos] = useState<PopupPos | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1366,14 +1398,9 @@ function ComponentsLine({ components }: { components: string }) {
   }
 
   function showAt(i: number, kind: "click" | "hover", e: ReactMouseEvent<HTMLElement>) {
+    if (kind === "hover" && openIndex !== null) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const halfPopupWidth = 112;
-    const margin = 8;
-    const left = Math.min(
-      Math.max(rect.left + rect.width / 2, halfPopupWidth + margin),
-      window.innerWidth - halfPopupWidth - margin
-    );
-    setPopupPos({ top: rect.bottom + 8, left });
+    setPopupPos(popupPlacement(rect, 112));
     if (kind === "hover") {
       setHoverIndex(i);
     } else if (openIndex === i) {
@@ -1424,7 +1451,12 @@ function ComponentsLine({ components }: { components: string }) {
             className="fixed z-50 -translate-x-1/2 animate-dropdown-in"
             style={{ top: popupPos.top, left: popupPos.left }}
           >
-            <ComponentInfoPopup char={shownComponent.char} pinyin={shownInfo.pinyin} meaning={shownInfo.meaning} />
+            <ComponentInfoPopup
+              char={shownComponent.char}
+              pinyin={shownInfo.pinyin}
+              meaning={shownInfo.meaning}
+              maxHeight={popupPos.maxHeight}
+            />
           </div>,
           document.body
         )}
