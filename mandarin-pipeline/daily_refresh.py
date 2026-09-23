@@ -682,7 +682,27 @@ def pick_example_words(character: str, count: int = 3, pronunciation: str = "") 
     # If nothing short survives, return None — the caller drops this word as
     # a candidate rather than show a run-on definition; a different (often
     # more common) example word will be picked instead.
-    def clean_meaning(meaning: str) -> str | None:
+    def is_self_transliteration(name: str, pinyin: str) -> bool:
+        """Whether `name` (a leading capitalized-word run pulled out of a
+        definition) is actually the romanization of the word this definition
+        belongs to — e.g. 万全's "Wanquan" (pinyin "wan2 quan2") — rather than
+        an unrelated capitalized word that just happened to start the
+        sentence — e.g. 证监会's "China" (pinyin "zheng4 jian4 hui4"), pulled
+        from the descriptive definition "China securities regulatory
+        commission CSRC". Compares both with spaces/apostrophes/tone digits
+        stripped, since transliterations often merge or split syllables
+        differently than the space-separated pinyin does (加勒比海 ->
+        "Jia1 le4 bi3 Hai3" -> "Jialebi Hai" or similar)."""
+        norm = lambda s: re.sub(r"[^a-z]", "", s.lower())
+        name_n, pinyin_n = norm(name), norm(re.sub(r"\d", "", pinyin))
+        # A prefix relation, not exact equality — the extracted name is
+        # usually a truncated lead-in to a longer construct (万全 -> "Wanquan"
+        # out of "Wanquan county in Zhangjiakou..."), and occasionally the
+        # reverse (accented pinyin like "Hànzhōng" strips to fewer ASCII
+        # letters than its own tone-stripped numbered form).
+        return pinyin_n.startswith(name_n) or name_n.startswith(pinyin_n)
+
+    def clean_meaning(meaning: str, pinyin: str = "") -> str | None:
         meaning = strip_parens(meaning)
         for sep in (",", ":", ";"):
             if sep in meaning:
@@ -700,7 +720,21 @@ def pick_example_words(character: str, count: int = 3, pronunciation: str = "") 
                 name_words.append(w)
             else:
                 break
-        return " ".join(name_words) if name_words else None
+        if not name_words:
+            return None
+        name = " ".join(name_words)
+        # A single leading capitalized word is usually the word's own
+        # transliterated name (万全 -> "Wanquan") — genuinely meaningful on
+        # its own — but occasionally it's just a truncated fragment of a
+        # longer institutional definition (证监会's "China securities
+        # regulatory commission CSRC" -> "China", which isn't 证监会's name
+        # at all). Distinguish by checking whether the extracted word is
+        # actually this word's own romanization; a 2+-word run (e.g. "Sun
+        # Yat-sen") is essentially always a real name already, so only the
+        # single-word case needs this check.
+        if len(name_words) == 1 and not is_self_transliteration(name, pinyin):
+            return None
+        return name
 
     # A CC-CEDICT entry's first "/"-separated sense is sometimes the long
     # descriptive one while a later sense is short and plain (e.g. 眼神's
@@ -708,9 +742,9 @@ def pick_example_words(character: str, count: int = 3, pronunciation: str = "") 
     # second is just "meaningful glance"; 下酒's second sense "to down one's
     # drink" beats its first). Try senses in order and use the first one
     # clean_meaning can shorten, instead of giving up after the first.
-    def first_clean_sense(definition: str) -> str | None:
+    def first_clean_sense(definition: str, pinyin: str = "") -> str | None:
         for sense in definition.split("/"):
-            cleaned = clean_meaning(sense.strip())
+            cleaned = clean_meaning(sense.strip(), pinyin)
             if cleaned is not None:
                 return cleaned
         return None
@@ -731,7 +765,7 @@ def pick_example_words(character: str, count: int = 3, pronunciation: str = "") 
                 continue
             if _is_rare_definition(item["definition"]):
                 continue
-            meaning = first_clean_sense(item["definition"])
+            meaning = first_clean_sense(item["definition"], item["pinyin"])
             if meaning is None:
                 continue
             result.append((item["simplified"], meaning, item["pinyin"]))
@@ -740,9 +774,27 @@ def pick_example_words(character: str, count: int = 3, pronunciation: str = "") 
     def char_reading(word: str, word_pinyin: str) -> str | None:
         idx = word.find(character)
         syllables = word_pinyin.split()
-        return syllables[idx].lower() if 0 <= idx < len(syllables) else None
+        if not (0 <= idx < len(syllables)):
+            return None
+        # CC-CEDICT (this tool's source) writes ü as "u:" (e.g. 绿's "lu:4"),
+        # but `pronunciation` normalizes it to "v" ("lv4", matching
+        # build_pronunciation_and_front's own convention) — without this,
+        # every word containing a ü-reading character silently matched
+        # nothing and lost all its example-word candidates.
+        return syllables[idx].lower().replace("u:", "v")
 
-    def collect_flat() -> list[tuple[str, str]]:
+    def collect_flat(reading: str | None) -> list[tuple[str, str]]:
+        # When the card has a single known reading, a candidate word must
+        # actually use THAT reading for this character — e.g. once 监's rare
+        # jiàn reading is pruned from `pronunciation`, 太监 (which realizes
+        # 监 as jiàn, not the card's jiān) must not slip in as an example
+        # just because it contains the character. Without this, dropping a
+        # reading from `pronunciation` doesn't stop its vocabulary from
+        # silently leaking into daily_words. No filter when `reading` is
+        # None (pronunciation wasn't available to parse at all).
+        def matches(w: str, p: str) -> bool:
+            return reading is None or char_reading(w, p) == reading
+
         selected: list[tuple[str, str]] = []
         seen: set[str] = set()
 
@@ -752,7 +804,7 @@ def pick_example_words(character: str, count: int = 3, pronunciation: str = "") 
         # nothing to show, and one unlucky enough to have both common and
         # proper candidates could still end up all-proper by chance.
         for tier in ("high", "medium", "low"):
-            candidates = [(w, m) for w, m, p in tier_words(tier, allow_proper=False) if w not in seen]
+            candidates = [(w, m) for w, m, p in tier_words(tier, allow_proper=False) if w not in seen and matches(w, p)]
             if candidates:
                 pick = random.choice(candidates)
                 selected.append(pick)
@@ -764,7 +816,7 @@ def pick_example_words(character: str, count: int = 3, pronunciation: str = "") 
         for tier in ("high", "medium", "low"):
             if len(selected) >= count:
                 break
-            candidates = [(w, m) for w, m, _ in tier_words(tier, allow_proper=True) if w not in seen]
+            candidates = [(w, m) for w, m, p in tier_words(tier, allow_proper=True) if w not in seen and matches(w, p)]
             random.shuffle(candidates)
             for pair in candidates:
                 if len(selected) >= count:
@@ -775,7 +827,7 @@ def pick_example_words(character: str, count: int = 3, pronunciation: str = "") 
 
     readings = parse_readings(pronunciation) if pronunciation else []
     if len(readings) <= 1:
-        return [collect_flat()]
+        return [collect_flat(readings[0] if readings else None)]
 
     def pick_for_reading(reading: str, needed: int, seen: set[str], allow_proper: bool) -> list[tuple[str, str]]:
         picked: list[tuple[str, str]] = []
