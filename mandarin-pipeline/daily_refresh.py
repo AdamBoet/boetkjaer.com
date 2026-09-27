@@ -1078,10 +1078,13 @@ def replenish_hanzi_new_cards(limit=None, settings=None):
     # already created today (a manual re-run) still count against it, so
     # running twice in a day doesn't double up. `mod` is stamped with the
     # creation time and stays put until the card's first review.
+    # The unstudied pile is capped at two days' worth, though: skipping a
+    # day means catching up on it the next, but skipping several shouldn't
+    # keep stacking up an ever-bigger backlog.
     current_new = len(sb_select_all("hanzi_cards", "select=note_id&or=(reps.eq.0,reps.is.null)"))
     midnight = int(datetime.combine(datetime.now().date(), datetime.min.time()).timestamp())
     created_today = len(sb_select_all("hanzi_cards", f"select=note_id&or=(reps.eq.0,reps.is.null)&mod=gte.{midnight}"))
-    shortfall = max(0, target - created_today)
+    shortfall = max(0, min(target - created_today, 2 * target - current_new))
     if limit is not None:
         shortfall = min(shortfall, limit)
     print(f"hanzi_cards: {current_new} new cards ({created_today} created today), target {target}, shortfall {shortfall}.")
