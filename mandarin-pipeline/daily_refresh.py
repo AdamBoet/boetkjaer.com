@@ -1066,6 +1066,23 @@ def build_components(components: dict, char: str, front: str) -> str:
     return ", ".join(f"{c} ({m})" for c, m in picked)
 
 
+def hanzi_cards_started_since(day) -> int:
+    """How many hanzi cards got their very first review on or after local
+    midnight of `day`. A card still in its learning steps keeps logging
+    review_type 0 on later days too, so any card with a review from before
+    the window doesn't count as started in it."""
+    since = datetime.combine(day, datetime.min.time()).astimezone(timezone.utc).isoformat()
+    q = urllib.parse.quote(since)
+    ids = {str(r["db_id"]) for r in sb_select_all("review_log", f"select=db_id&source=eq.hanzi&review_type=eq.0&reviewed_at=gte.{q}")}
+    if not ids:
+        return 0
+    earlier = {
+        str(r["db_id"])
+        for r in sb_select_all("review_log", f"select=db_id&source=eq.hanzi&reviewed_at=lt.{q}&db_id=in.({','.join(ids)})")
+    }
+    return len(ids - earlier)
+
+
 def replenish_hanzi_new_cards(limit=None, settings=None):
     settings = settings if settings is not None else load_settings()
     target = get_new_cards_target(settings, "hanzi")
@@ -1078,19 +1095,17 @@ def replenish_hanzi_new_cards(limit=None, settings=None):
     # already created today (a manual re-run) still count against it, so
     # running twice in a day doesn't double up. `mod` is stamped with the
     # creation time and stays put until the card's first review.
-    # Leftovers only carry over one day, though: skipping a day means
-    # catching up on it the next, but if cards from before yesterday are
-    # *still* unstudied (skipped two days running), nothing new is added
-    # until they're cleared — the pile stays put instead of growing.
+    # Only if new cards were actually being studied, though: a day where
+    # none got touched adds nothing, so the pile stays put instead of
+    # growing while you're away. (An empty pile always gets topped up.)
     current_new = len(sb_select_all("hanzi_cards", "select=note_id&or=(reps.eq.0,reps.is.null)"))
     midnight = int(datetime.combine(datetime.now().date(), datetime.min.time()).timestamp())
-    yesterday_midnight = int(datetime.combine(datetime.now().date() - timedelta(days=1), datetime.min.time()).timestamp())
     created_today = len(sb_select_all("hanzi_cards", f"select=note_id&or=(reps.eq.0,reps.is.null)&mod=gte.{midnight}"))
-    stale = len(sb_select_all("hanzi_cards", f"select=note_id&or=(reps.eq.0,reps.is.null)&mod=lt.{yesterday_midnight}"))
-    shortfall = 0 if stale else max(0, target - created_today)
+    started = hanzi_cards_started_since(datetime.now().date() - timedelta(days=1))
+    shortfall = max(0, target - created_today) if (started or current_new == 0) else 0
     if limit is not None:
         shortfall = min(shortfall, limit)
-    print(f"hanzi_cards: {current_new} new cards ({created_today} created today, {stale} skipped 2+ days), target {target}, shortfall {shortfall}.")
+    print(f"hanzi_cards: {current_new} new cards ({created_today} created today, {started} started since yesterday), target {target}, shortfall {shortfall}.")
     if shortfall == 0:
         return 0, 0, shortfall
 
