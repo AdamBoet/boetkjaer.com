@@ -534,6 +534,17 @@ function buildQueue(
   };
 }
 
+// How many more new cards a deck may introduce today. Hanzi is uncapped:
+// daily_refresh.py adds exactly the configured number of fresh cards each
+// night, so every never-studied hanzi card is one you're meant to see —
+// yesterday's unfinished ones plus tonight's. The other decks draw from a
+// large pre-imported pool (thousands of HSK3 words), so they keep the
+// "New cards per session" setting as a per-day allowance.
+function newCardAllowance(key: DeckKey, introducedToday: number): number {
+  if (key === "hanzi") return Infinity;
+  return Math.max(0, loadNewCards(key) - introducedToday);
+}
+
 // Counts shown in the deck menu — computed from our own data, not Anki.
 // New/Due are capped by the same session settings the review queue itself
 // uses, so the numbers shown are exactly what pressing into the deck yields.
@@ -554,7 +565,7 @@ function countDeck(key: DeckKey, items: AnyCard[], mounted: boolean, newIntroduc
   // distinct new cards have already been introduced today (see the
   // newIntroducedToday computation below) so the number actually counts
   // down over the course of a day instead of always showing the raw cap.
-  const cap = mounted ? Math.max(0, loadNewCards(key) - newIntroducedToday) : null;
+  const cap = mounted ? newCardAllowance(key, newIntroducedToday) : null;
   return {
     key,
     label: DECK_LABELS[key],
@@ -2451,7 +2462,10 @@ export default function FlashcardTab({
   // re-shows before it graduates) and never applies to a card relearning
   // after a lapse on some later day (that's review_type 2) — so deduping
   // today's review_type-0 rows by (source, db_id) gives an accurate count
-  // without needing a dedicated "was this a new card" column.
+  // without needing a dedicated "was this a new card" column. Except a card
+  // still in its learning steps past midnight keeps logging review_type 0
+  // the next day too — those come back in the API's `seenBefore` and are
+  // skipped, or they'd eat into today's allowance a second time.
   const [newToday, setNewToday] = useState<Record<DeckKey, number>>({ hanzi: 0, hsk3: 0, random_words: 0, idioms: 0 });
   // True only once the *real* (server-verified) count has resolved for the
   // current deck-menu visit — false while a fresh fetch is in flight, so a
@@ -2521,8 +2535,9 @@ export default function FlashcardTab({
         const seenByDeck: Record<DeckKey, Set<string>> = { hanzi: new Set(), hsk3: new Set(), random_words: new Set(), idioms: new Set() };
         const idPrefix: Record<DeckKey, string> = { hanzi: "hanzi", hsk3: "hsk3", random_words: "wp", idioms: "wp" };
         const newIds = new Set<string>();
+        const seenBefore = new Set<string>(Array.isArray(d.seenBefore) ? d.seenBefore : []);
         for (const r of todays) {
-          if (r.review_type === 0 && seenByDeck[r.source]) {
+          if (r.review_type === 0 && seenByDeck[r.source] && !seenBefore.has(`${r.source}:${r.db_id}`)) {
             seenByDeck[r.source].add(r.db_id);
             newIds.add(`${idPrefix[r.source]}-${r.db_id}`);
           }
@@ -2572,8 +2587,10 @@ export default function FlashcardTab({
         ? randomWords.map((card) => ({ key: "random_words" as const, card }))
         : idioms.map((card) => ({ key: "idioms" as const, card }));
     // Zero (not the cached/stale count) while a fresh fetch of today's
-    // real total is in flight — see newTodayFetched above.
-    const newCardsLimit = newTodayFetched ? Math.max(0, loadNewCards(selectedDeck) - newToday[selectedDeck]) : 0;
+    // real total is in flight — see newTodayFetched above. (Hanzi doesn't
+    // depend on that count at all, so it never needs to wait.)
+    const newCardsLimit =
+      selectedDeck === "hanzi" || newTodayFetched ? newCardAllowance(selectedDeck, newToday[selectedDeck]) : 0;
     return buildQueue(items, loadMaxReviews(selectedDeck), newCardsLimit);
   }, [selectedDeck, cards, hsk3Known, randomWords, idioms, newToday, newTodayFetched, settingsSynced]);
 
@@ -2592,7 +2609,7 @@ export default function FlashcardTab({
     ];
     for (const [i, items] of perDeckItems.entries()) {
       const key = (["hanzi", "hsk3", "random_words", "idioms"] as const)[i];
-      const { queue: q, pending: p } = buildQueue(items, loadMaxReviews(key), loadNewCards(key));
+      const { queue: q, pending: p } = buildQueue(items, loadMaxReviews(key), newCardAllowance(key, 0));
       const first = q[0] ?? p[0]?.card;
       if (!first) continue;
       for (const url of [first.audioUrl, first.sentenceAudioUrl]) {

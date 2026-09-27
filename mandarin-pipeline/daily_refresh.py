@@ -1072,11 +1072,19 @@ def replenish_hanzi_new_cards(limit=None, settings=None):
     word_count = get_setting(settings, "hanzi", "word_count")
     voice = get_setting(settings, "hanzi", "voice")
 
+    # Adds `target` fresh cards every night on top of any still-unstudied
+    # ones — the site shows every never-studied hanzi card, so yesterday's
+    # leftovers stack with tonight's instead of eating into them. Cards
+    # already created today (a manual re-run) still count against it, so
+    # running twice in a day doesn't double up. `mod` is stamped with the
+    # creation time and stays put until the card's first review.
     current_new = len(sb_select_all("hanzi_cards", "select=note_id&or=(reps.eq.0,reps.is.null)"))
-    shortfall = max(0, target - current_new)
+    midnight = int(datetime.combine(datetime.now().date(), datetime.min.time()).timestamp())
+    created_today = len(sb_select_all("hanzi_cards", f"select=note_id&or=(reps.eq.0,reps.is.null)&mod=gte.{midnight}"))
+    shortfall = max(0, target - created_today)
     if limit is not None:
         shortfall = min(shortfall, limit)
-    print(f"hanzi_cards: {current_new} new cards, target {target}, shortfall {shortfall}.")
+    print(f"hanzi_cards: {current_new} new cards ({created_today} created today), target {target}, shortfall {shortfall}.")
     if shortfall == 0:
         return 0, 0, shortfall
 
@@ -1660,7 +1668,9 @@ def build_deck_summary(settings: dict) -> tuple[str, int, int]:
     total_new = total_learn = total_due = 0
     for deck_key, label, cards in decks:
         new, learn, due = classify(cards)
-        cap = get_setting(settings, deck_key, "new_cards")
+        # Hanzi is uncapped on the site (see newCardAllowance there) — every
+        # unstudied card, yesterday's leftovers included, is up for review.
+        cap = None if deck_key == "hanzi" else get_setting(settings, deck_key, "new_cards")
         if cap is not None:
             new = min(new, cap)
         total_new += new
