@@ -1089,23 +1089,19 @@ def replenish_hanzi_new_cards(limit=None, settings=None):
     word_count = get_setting(settings, "hanzi", "word_count")
     voice = get_setting(settings, "hanzi", "voice")
 
-    # Adds `target` fresh cards every night on top of any still-unstudied
-    # ones — the site shows every never-studied hanzi card, so yesterday's
-    # leftovers stack with tonight's instead of eating into them. Cards
-    # already created today (a manual re-run) still count against it, so
-    # running twice in a day doesn't double up. `mod` is stamped with the
-    # creation time and stays put until the card's first review.
-    # Only if new cards were actually being studied, though: a day where
-    # none got touched adds nothing, so the pile stays put instead of
-    # growing while you're away. (An empty pile always gets topped up.)
+    # Adds a fresh batch of `target` cards on top of any still-unstudied
+    # ones (the site shows every never-studied hanzi card), but only once
+    # the pile is down below `target` — so it never climbs past 2x target-1
+    # and a missed day doesn't snowball — and only if new cards were
+    # actually being studied since yesterday, so a day where none got
+    # touched adds nothing. An empty pile always gets topped up. The pile
+    # check also makes a same-day manual re-run a no-op.
     current_new = len(sb_select_all("hanzi_cards", "select=note_id&or=(reps.eq.0,reps.is.null)"))
-    midnight = int(datetime.combine(datetime.now().date(), datetime.min.time()).timestamp())
-    created_today = len(sb_select_all("hanzi_cards", f"select=note_id&or=(reps.eq.0,reps.is.null)&mod=gte.{midnight}"))
     started = hanzi_cards_started_since(datetime.now().date() - timedelta(days=1))
-    shortfall = max(0, target - created_today) if (started or current_new == 0) else 0
+    shortfall = target if current_new == 0 or (current_new < target and started) else 0
     if limit is not None:
         shortfall = min(shortfall, limit)
-    print(f"hanzi_cards: {current_new} new cards ({created_today} created today, {started} started since yesterday), target {target}, shortfall {shortfall}.")
+    print(f"hanzi_cards: {current_new} new cards ({started} started since yesterday), target {target}, shortfall {shortfall}.")
     if shortfall == 0:
         return 0, 0, shortfall
 
