@@ -1066,23 +1066,6 @@ def build_components(components: dict, char: str, front: str) -> str:
     return ", ".join(f"{c} ({m})" for c, m in picked)
 
 
-def hanzi_cards_started_since(day) -> int:
-    """How many hanzi cards got their very first review on or after local
-    midnight of `day`. A card still in its learning steps keeps logging
-    review_type 0 on later days too, so any card with a review from before
-    the window doesn't count as started in it."""
-    since = datetime.combine(day, datetime.min.time()).astimezone(timezone.utc).isoformat()
-    q = urllib.parse.quote(since)
-    ids = {str(r["db_id"]) for r in sb_select_all("review_log", f"select=db_id&source=eq.hanzi&review_type=eq.0&reviewed_at=gte.{q}")}
-    if not ids:
-        return 0
-    earlier = {
-        str(r["db_id"])
-        for r in sb_select_all("review_log", f"select=db_id&source=eq.hanzi&reviewed_at=lt.{q}&db_id=in.({','.join(ids)})")
-    }
-    return len(ids - earlier)
-
-
 def replenish_hanzi_new_cards(limit=None, settings=None):
     settings = settings if settings is not None else load_settings()
     target = get_new_cards_target(settings, "hanzi")
@@ -1092,16 +1075,13 @@ def replenish_hanzi_new_cards(limit=None, settings=None):
     # Adds a fresh batch of `target` cards on top of any still-unstudied
     # ones (the site shows every never-studied hanzi card), but only once
     # the pile is down below `target` — so it never climbs past 2x target-1
-    # and a missed day doesn't snowball — and only if new cards were
-    # actually being studied since yesterday, so a day where none got
-    # touched adds nothing. An empty pile always gets topped up. The pile
-    # check also makes a same-day manual re-run a no-op.
+    # and missed days don't snowball. This also makes a same-day manual
+    # re-run a no-op.
     current_new = len(sb_select_all("hanzi_cards", "select=note_id&or=(reps.eq.0,reps.is.null)"))
-    started = hanzi_cards_started_since(datetime.now().date() - timedelta(days=1))
-    shortfall = target if current_new == 0 or (current_new < target and started) else 0
+    shortfall = target if current_new < target else 0
     if limit is not None:
         shortfall = min(shortfall, limit)
-    print(f"hanzi_cards: {current_new} new cards ({started} started since yesterday), target {target}, shortfall {shortfall}.")
+    print(f"hanzi_cards: {current_new} new cards, target {target}, shortfall {shortfall}.")
     if shortfall == 0:
         return 0, 0, shortfall
 
