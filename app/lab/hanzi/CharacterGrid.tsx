@@ -11,7 +11,6 @@ export interface HanziCard {
   front: string;
   components?: string;
   examples?: string;
-  audio_url?: string | null;
   picture_url?: string | null;
   daily_words?: string | null;
   daily_words_audio_url?: string | null;

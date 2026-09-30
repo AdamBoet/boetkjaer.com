@@ -978,7 +978,7 @@ export default function BrowseTab({
               {row.sub && <span className="text-zinc-500 dark:text-zinc-400 mr-1.5">{row.sub}</span>}
               <span className="text-zinc-400 dark:text-zinc-500 text-xs">{row.back}</span>
             </div>
-            <AudioButton src={row.audioUrl} label="Play pronunciation" />
+            <AudioButton src={row.sentenceAudioUrl || row.dailyWordsAudioUrl} label="Play pronunciation" />
           </div>
         );
       case "deck":

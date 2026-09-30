@@ -145,7 +145,6 @@ export interface DueCard {
   sentence?: string; // hsk3 + wp (random_words/idioms) — example sentence
   sentencePinyin?: string;
   sentenceMeaning?: string;
-  audioUrl?: string | null; // word/character pronunciation
   sentenceAudioUrl?: string | null; // hsk3 + wp
   pictureUrl?: string | null; // hanzi + wp only
   rank?: number; // hanzi only — frequency rank (lower = more common)
@@ -396,7 +395,7 @@ export function toDueCard(key: DeckKey, card: AnyCard, dueDiff: number | null, i
     const c = card as HanziCard;
     return {
       id: `hanzi-${c.note_id}`, dbId: c.note_id, source: "hanzi", front: c.character, sub: c.pronunciation, back: c.front, dueDiff, isNew, ...stats,
-      components: c.components, examples: c.examples, audioUrl: c.audio_url, pictureUrl: c.picture_url, rank: c.rank,
+      components: c.components, examples: c.examples, pictureUrl: c.picture_url, rank: c.rank,
       dailyWords: c.daily_words ?? undefined, dailyWordsAudioUrl: c.daily_words_audio_url,
     };
   }
@@ -405,7 +404,7 @@ export function toDueCard(key: DeckKey, card: AnyCard, dueDiff: number | null, i
     return {
       id: `hsk3-${w.word}`, dbId: w.word, source: "hsk3", front: w.word, sub: w.pinyin ?? "", back: w.meaning ?? "", dueDiff, isNew, ...stats,
       sentence: w.sentence, sentencePinyin: w.sentence_pinyin, sentenceMeaning: w.sentence_meaning,
-      audioUrl: w.audio_url, sentenceAudioUrl: w.sentence_audio_url, levelLabel: w.levelLabel,
+      sentenceAudioUrl: w.sentence_audio_url, levelLabel: w.levelLabel,
     };
   }
   const p = card as WordPhrase;
@@ -1013,6 +1012,14 @@ function playAudioSequence(urls: string[]) {
     playAudio(urls[i++], next);
   }
   next();
+}
+
+// What the back of a card plays, both when it's revealed and when "r"
+// replays it: sentenceAudioUrl (hsk3/random_words/idioms) or
+// dailyWordsAudioUrl (hanzi), each of which narrates the word first.
+function revealAudioUrls(card: DueCard | undefined | null): string[] {
+  const url = card?.sentenceAudioUrl || card?.dailyWordsAudioUrl;
+  return url ? [url] : [];
 }
 
 export function AudioButton({ src, label }: { src?: string | null; label: string }) {
@@ -1842,7 +1849,7 @@ function ReviewSession({
       }
     }
     for (const card of queue.slice(1, 4)) {
-      for (const url of [card.audioUrl, card.sentenceAudioUrl]) {
+      for (const url of revealAudioUrls(card)) {
         if (!url || prefetchedUrls.has(url)) continue;
         prefetchedUrls.add(url);
         const audio = new Audio();
@@ -1862,12 +1869,7 @@ function ReviewSession({
 
   useEffect(() => {
     if (!revealed) return;
-    // sentenceAudioUrl (hsk3/random_words/idioms) and dailyWordsAudioUrl
-    // (hanzi) already narrate the word first, so queuing the standalone
-    // word-only clip in front of either would just say it twice. Only fall
-    // back to that old clip for a card that doesn't have the newer one yet.
-    const preferred = current?.sentenceAudioUrl || current?.dailyWordsAudioUrl;
-    const urls = preferred ? [preferred] : [current?.audioUrl].filter((u): u is string => !!u);
+    const urls = revealAudioUrls(current);
     if (urls.length > 0) playAudioSequence(urls);
 
     return () => {
@@ -2051,17 +2053,14 @@ function ReviewSession({
         // without giving away the answer.
         if (revealed) {
           setRedoDrawing(true);
-          if (current.audioUrl) playAudio(current.audioUrl);
+          const urls = revealAudioUrls(current);
+          if (urls.length > 0) playAudioSequence(urls);
         }
         setRedoAttempt((n) => n + 1);
         return;
       }
       if (e.key.toLowerCase() === "r" && current && current.source !== "hanzi" && revealed) {
-        // Same audio the reveal itself autoplays — sentenceAudioUrl already
-        // narrates the word first, so don't also queue the standalone clip.
-        const urls = current.sentenceAudioUrl
-          ? [current.sentenceAudioUrl]
-          : [current.audioUrl].filter((u): u is string => !!u);
+        const urls = revealAudioUrls(current);
         if (urls.length > 0) playAudioSequence(urls);
         return;
       }
@@ -2168,7 +2167,7 @@ function ReviewSession({
                 <p className="text-2xl">
                   <ClickableHanziWord key={current.id} text={current.front} />
                 </p>
-                {!current.sentenceAudioUrl && <AudioButton src={current.audioUrl} label="Play pronunciation" />}
+                <span />
               </div>
             ) : (
               <p className="text-2xl text-center">
@@ -2612,8 +2611,8 @@ export default function FlashcardTab({
       const { queue: q, pending: p } = buildQueue(items, loadMaxReviews(key), newCardAllowance(key, 0));
       const first = q[0] ?? p[0]?.card;
       if (!first) continue;
-      for (const url of [first.audioUrl, first.sentenceAudioUrl]) {
-        if (!url || menuPrefetchedUrls.has(url)) continue;
+      for (const url of revealAudioUrls(first)) {
+        if (menuPrefetchedUrls.has(url)) continue;
         menuPrefetchedUrls.add(url);
         const audio = new Audio();
         audio.preload = "auto";

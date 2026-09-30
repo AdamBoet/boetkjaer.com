@@ -12,7 +12,6 @@ export interface Hsk3Word {
   sentence?: string;
   sentence_pinyin?: string;
   sentence_meaning?: string;
-  audio_url?: string | null;
   sentence_audio_url?: string | null;
   note_id?: number;
   card_id?: number;

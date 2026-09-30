@@ -525,7 +525,7 @@ export default function HanziDashboard({
         for (const [levelKey, words] of Object.entries(hsk3Coverage.levels)) {
           updatedLevels[levelKey] = words.map((w) => {
             const r = byWord.get(w.word);
-            // Keep every existing field (audio_url, sentence_audio_url,
+            // Keep every existing field (sentence_audio_url, sentence,
             // etc.) instead of rebuilding from just word/pinyin/meaning —
             // that silently dropped media URLs from memory on every refresh.
             return r ? { ...w, known: true, ...r } : { ...w, known: false };
