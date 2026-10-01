@@ -482,6 +482,23 @@ function interleave<T>(due: T[], newOnes: T[]): T[] {
   return out;
 }
 
+// interleave() spaces new cards by how many due cards are left, so
+// rebuilding the queue after leaving mid-session would land the remaining
+// new cards at different spots. Instead, the first queue of the day is
+// saved (see /api/session-order) and every later rebuild that day keeps
+// those cards in the saved order — graded ones are simply gone. Anything
+// not in the saved order (a card that became due since) is merged in:
+// due cards up front, new cards interleaved as usual.
+function applySavedOrder(queue: DueCard[], savedIds: string[]): DueCard[] {
+  const rank = new Map(savedIds.map((id, i) => [id, i]));
+  const saved = queue.filter((c) => rank.has(c.id)).sort((a, b) => rank.get(a.id)! - rank.get(b.id)!);
+  const unsaved = queue.filter((c) => !rank.has(c.id));
+  return [
+    ...unsaved.filter((c) => !c.isNew),
+    ...interleave(saved, unsaved.filter((c) => c.isNew)),
+  ];
+}
+
 // Due/overdue and new cards each keep their existing stable order (due:
 // whatever order they were fetched in, effectively rank/frequency for
 // hanzi; new: same) — capped at `maxReviews`/`newCardsLimit`, then
@@ -1987,7 +2004,8 @@ function ReviewSession({
   // Polls for pending learning/relearning cards whose step delay has
   // elapsed and splices them back into the live queue near the front —
   // Anki interleaves them with other due cards rather than appending them
-  // at the very end.
+  // at the very end. Always the same slot (right after the next card), not
+  // a random one, so when a card comes back is predictable.
   useEffect(() => {
     if (pending.length === 0) return;
     const id = setInterval(() => {
@@ -1997,10 +2015,9 @@ function ReviewSession({
       setPending((p) => p.filter((x) => x.dueAt > now));
       setQueue((q) => {
         const next = [...q];
-        for (const { card } of ready) {
-          const pos = Math.min(next.length, Math.floor(Math.random() * 3) + 1);
-          next.splice(pos, 0, card);
-        }
+        ready.forEach(({ card }, i) => {
+          next.splice(Math.min(next.length, 2 + i), 0, card);
+        });
         return next;
       });
     }, 5000);
@@ -2474,6 +2491,11 @@ export default function FlashcardTab({
   // not just once ever, so a fast exit-then-reenter can't race a
   // still-in-flight refetch either.
   const [newTodayFetched, setNewTodayFetched] = useState(false);
+  // Today's saved review order per deck (see applySavedOrder). Re-fetched on
+  // every return to the deck menu, like newToday, and a session doesn't
+  // start until it has resolved — ReviewSession only reads its queue once.
+  const [savedOrders, setSavedOrders] = useState<Partial<Record<DeckKey, string[]>>>({});
+  const [savedOrdersFetched, setSavedOrdersFetched] = useState(false);
   // Full DueCard.id set of every card introduced as new today (not just
   // this session) — the NEW badge should keep showing for a card even
   // after a reload/re-entry later the same day, not just within the one
@@ -2508,6 +2530,12 @@ export default function FlashcardTab({
     // show up until the whole tab remounted.
     if (selectedDeck !== null) return;
     setNewTodayFetched(false);
+    setSavedOrdersFetched(false);
+    fetch(`/api/session-order?day=${encodeURIComponent(new Date().toDateString())}`)
+      .then((r) => r.json())
+      .then((d) => setSavedOrders(d.orders ?? {}))
+      .catch(() => setSavedOrders({}))
+      .finally(() => setSavedOrdersFetched(true));
     // Scoped to today's local midnight onward — a revlog with months of
     // history has no reason to be paged through in full just to answer a
     // same-day question.
@@ -2590,8 +2618,28 @@ export default function FlashcardTab({
     // depend on that count at all, so it never needs to wait.)
     const newCardsLimit =
       selectedDeck === "hanzi" || newTodayFetched ? newCardAllowance(selectedDeck, newToday[selectedDeck]) : 0;
-    return buildQueue(items, loadMaxReviews(selectedDeck), newCardsLimit);
-  }, [selectedDeck, cards, hsk3Known, randomWords, idioms, newToday, newTodayFetched, settingsSynced]);
+    const built = buildQueue(items, loadMaxReviews(selectedDeck), newCardsLimit);
+    const saved = savedOrders[selectedDeck];
+    return saved ? { ...built, queue: applySavedOrder(built.queue, saved) } : built;
+  }, [selectedDeck, cards, hsk3Known, randomWords, idioms, newToday, newTodayFetched, settingsSynced, savedOrders]);
+
+  // Waits for both fetches so the order saved below already includes the
+  // day's real new-card allowance (see newTodayFetched).
+  const sessionReady = savedOrdersFetched && (selectedDeck === "hanzi" || newTodayFetched);
+
+  // First session of the day for this deck: save its order so re-entering
+  // later (here or on another device) resumes it. Kept locally too, so a
+  // re-entry before the menu's refetch lands still uses it.
+  useEffect(() => {
+    if (!selectedDeck || !sessionReady || savedOrders[selectedDeck] || queue.length === 0) return;
+    const cardIds = queue.map((c) => c.id);
+    setSavedOrders((o) => ({ ...o, [selectedDeck]: cardIds }));
+    fetch("/api/session-order", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deck: selectedDeck, day: new Date().toDateString(), card_ids: cardIds }),
+    }).catch(() => {});
+  }, [selectedDeck, sessionReady, savedOrders, queue]);
 
   // Warms the very first card's audio/picture for every deck while still
   // sitting on the deck menu, so picking a deck doesn't cost a fetch on
@@ -2682,6 +2730,8 @@ export default function FlashcardTab({
       </div>
     );
   }
+
+  if (!sessionReady) return <div className="min-h-[70vh]" />;
 
   if (queue.length === 0 && pending.length === 0) {
     return (
