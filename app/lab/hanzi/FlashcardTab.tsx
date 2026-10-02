@@ -1983,7 +1983,11 @@ function ReviewSession({
       rem.ms = TIMER_MS;
     }
     rem.startedAt = Date.now();
-    const id = setTimeout(() => setTimedOutFor(timerSegment), rem.ms);
+    // Running out also flips the card, straight to the Again-only back.
+    const id = setTimeout(() => {
+      setTimedOutFor(timerSegment);
+      setRevealed(true);
+    }, rem.ms);
     return () => {
       clearTimeout(id);
       rem.ms = Math.max(0, rem.ms - (Date.now() - (rem.startedAt ?? Date.now())));
@@ -2240,6 +2244,9 @@ function ReviewSession({
       }
 
       if (!revealed) return;
+      // Timed out: only Again exists, so just 1 (and Space, above) grade —
+      // 2/3/4 do nothing rather than silently counting as Again.
+      if (timedOut && e.key !== "1") return;
       if (e.key === "1") grade.current("again");
       else if (e.key === "2") grade.current("hard");
       else if (e.key === "3") grade.current("good");
@@ -2247,7 +2254,7 @@ function ReviewSession({
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [revealed, editOpen, current, onJumpToCard, onExit]);
+  }, [revealed, editOpen, current, timedOut, onJumpToCard, onExit]);
 
   if (!current) {
     return (
