@@ -167,6 +167,12 @@ const GRADUATE_INTERVAL_DAYS = 1;
 const EASY_INTERVAL_DAYS = 4;
 const LAPSE_MIN_INTERVAL_DAYS = 1;
 
+// Optional review timer: flipping a card after it runs out only allows
+// Again, and that Again always comes back in FORCED_AGAIN_MIN — even for
+// new/learning cards, whose normal Again step is shorter.
+const TIMER_MS = 10_000;
+const FORCED_AGAIN_MIN = 10;
+
 interface ScheduleResult {
   interval: number; // days — only meaningful when dueInMin is null (graduated)
   factor: number;
@@ -883,6 +889,106 @@ function GridToggleButton() {
   );
 }
 
+function TimerToggleButton({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={(e) => { e.currentTarget.blur(); onToggle(); }}
+      aria-pressed={on}
+      aria-label="Toggle 10s timer"
+      title="Toggle 10s timer"
+      className={`inline-flex items-center h-4 leading-none transition-colors ${
+        on
+          ? "text-blue-500 dark:text-blue-400 [filter:drop-shadow(0_0_6px_rgba(59,130,246,0.85))]"
+          : "text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"
+      }`}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" className="w-4 h-4">
+        <circle cx="10" cy="11" r="6.5" />
+        <path d="M10 7.5V11l2.25 1.5M8 2.25h4M10 2.25v2.25" />
+      </svg>
+    </button>
+  );
+}
+
+type TimerState = { segment: string; ms: number; startedAt: number | null };
+
+function timerMsLeft(t: TimerState, segment: string): number {
+  if (t.segment !== segment) return TIMER_MS;
+  return t.startedAt == null ? t.ms : Math.max(0, t.ms - (Date.now() - t.startedAt));
+}
+
+const TIMER_STRIPES =
+  "repeating-linear-gradient(-45deg, transparent, transparent 5px, rgba(255,255,255,0.3) 5px, rgba(255,255,255,0.3) 10px)";
+
+// Same striped pill as the hanzi page's yearly-goal bar. Ticks on its own
+// (reading the session's timer ref) so only this small component
+// re-renders while the countdown runs. Green → yellow → red as it drains.
+function TimerBar({
+  timer,
+  segment,
+  running,
+  timedOut,
+}: {
+  timer: React.RefObject<TimerState>;
+  segment: string;
+  running: boolean;
+  timedOut: boolean;
+}) {
+  const [msLeft, setMsLeft] = useState(() => timerMsLeft(timer.current, segment));
+  useEffect(() => {
+    setMsLeft(timerMsLeft(timer.current, segment));
+    if (!running) return;
+    const id = setInterval(() => setMsLeft(timerMsLeft(timer.current, segment)), 100);
+    return () => clearInterval(id);
+  }, [running, segment, timer]);
+
+  const left = timedOut ? 0 : msLeft;
+  const pct = (left / TIMER_MS) * 100;
+  const seconds = Math.ceil(left / 1000);
+  const color = timerColor(left / TIMER_MS);
+
+  return (
+    // Centered in the header row itself (absolutely, so the left/right
+    // header groups keep their own positions); narrower on small screens
+    // so it clears the back button and icons.
+    // The seconds label hangs below the bar (absolutely), so the bar alone
+    // is what's centered and the header row's height is unaffected.
+    <div className="absolute left-1/2 top-0.5 -translate-x-1/2 pointer-events-none" aria-hidden>
+      <div className="h-4 w-24 sm:w-48 lg:w-72 rounded-full bg-zinc-200 dark:bg-zinc-800 overflow-hidden relative">
+        <div
+          className="absolute inset-y-0 left-0 transition-[width,background-color] duration-100 ease-linear"
+          style={{ width: `${pct}%`, backgroundColor: color, backgroundImage: TIMER_STRIPES }}
+        />
+      </div>
+      <span className="absolute left-1/2 top-full -translate-x-1/2 mt-1 text-xs font-medium tabular-nums transition-colors duration-100 ease-linear" style={{ color }}>
+        {seconds}s
+      </span>
+    </div>
+  );
+}
+
+// Continuous blend across emerald-700 → yellow-500 → red-500 (the same
+// Tailwind shades the stepped version used), so the color drifts with the
+// bar instead of jumping at fixed thresholds. `frac` is time left, 1 → 0.
+const TIMER_COLOR_STOPS: [number, [number, number, number]][] = [
+  [1, [4, 120, 87]],
+  [0.5, [234, 179, 8]],
+  [0, [239, 68, 68]],
+];
+function timerColor(frac: number): string {
+  const f = Math.min(1, Math.max(0, frac));
+  for (let i = 0; i < TIMER_COLOR_STOPS.length - 1; i++) {
+    const [hi, from] = TIMER_COLOR_STOPS[i];
+    const [lo, to] = TIMER_COLOR_STOPS[i + 1];
+    if (f >= lo) {
+      const t = (hi - f) / (hi - lo);
+      const c = from.map((v, k) => Math.round(v + (to[k] - v) * t));
+      return `rgb(${c.join(", ")})`;
+    }
+  }
+  return `rgb(${TIMER_COLOR_STOPS[TIMER_COLOR_STOPS.length - 1][1].join(", ")})`;
+}
+
 function HotkeysPanel({ source }: { source: DeckKey }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -984,16 +1090,27 @@ function AudioControl() {
   const silent = muted || volume === 0;
 
   return (
-    <div className="flex items-center h-4 gap-2">
-      <input
-        type="range"
-        min={0}
-        max={100}
-        value={Math.round(volume * 100)}
-        onChange={handleVolumeChange}
-        aria-label="Audio volume"
-        className="hidden sm:block w-16 h-4 accent-zinc-500 dark:accent-zinc-400"
-      />
+    // Just the mute icon in the header; hovering it (desktop only) drops a
+    // vertical volume slider down underneath. The dropdown's pt-3 is a hover
+    // bridge, so moving the pointer from the icon down onto the slider
+    // doesn't cross a gap and close it.
+    <div className="group relative flex items-center h-4">
+      <div className="hidden md:group-hover:flex md:group-focus-within:flex absolute left-1/2 -translate-x-1/2 top-full pt-3 z-20 animate-dropdown-in">
+        <div className="flex items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-800 px-1.5 py-3">
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round(volume * 100)}
+            onChange={handleVolumeChange}
+            aria-label="Audio volume"
+            // vertical-lr + rtl makes it a vertical slider with the
+            // minimum at the bottom (plain vertical-lr puts min on top).
+            style={{ writingMode: "vertical-lr", direction: "rtl" }}
+            className="w-4 h-20 accent-zinc-500 dark:accent-zinc-400"
+          />
+        </div>
+      </div>
       <button
         onClick={() => setMuted(!muted)}
         aria-pressed={muted}
@@ -1843,6 +1960,42 @@ function ReviewSession({
     setRedoDrawing(false);
   }, [current?.id]);
 
+  // Review timer (session-only, off by default). Each showing of a card is
+  // its own timer "segment", keyed by card id + an epoch bumped on every
+  // grade/undo/toggle-on — a learning card that comes back later (same id)
+  // or an undone card gets a fresh 10s instead of inheriting old state.
+  // Flipping back with U doesn't bump it, so that can't reset a timeout.
+  const [timerOn, setTimerOn] = useState(false);
+  const [timerEpoch, setTimerEpoch] = useState(0);
+  const [timedOutFor, setTimedOutFor] = useState<string | null>(null);
+  const timerSegment = `${current?.id}-${timerEpoch}`;
+  const timedOut = timerOn && timedOutFor === timerSegment;
+  const timerRunning = timerOn && !timedOut && !revealed && !editOpen && !!current;
+  // Time left in the current segment, carried across pauses (flip, edit).
+  // `startedAt` is set only while running, so TimerBar can read the live
+  // remaining time without this component re-rendering every tick.
+  const timerRemaining = useRef<TimerState>({ segment: "", ms: TIMER_MS, startedAt: null });
+  useEffect(() => {
+    if (!timerRunning) return;
+    const rem = timerRemaining.current;
+    if (rem.segment !== timerSegment) {
+      rem.segment = timerSegment;
+      rem.ms = TIMER_MS;
+    }
+    rem.startedAt = Date.now();
+    const id = setTimeout(() => setTimedOutFor(timerSegment), rem.ms);
+    return () => {
+      clearTimeout(id);
+      rem.ms = Math.max(0, rem.ms - (Date.now() - (rem.startedAt ?? Date.now())));
+      rem.startedAt = null;
+    };
+  }, [timerRunning, timerSegment]);
+  function toggleTimer() {
+    if (!timerOn) setTimerEpoch((n) => n + 1);
+    setTimedOutFor(null);
+    setTimerOn((v) => !v);
+  }
+
   // Warms the browser's cache for the next few upcoming cards' audio and
   // pictures — otherwise the first play/render of each card pays a real
   // network fetch, which shows up as a beat of silence before the voice
@@ -1917,10 +2070,12 @@ function ReviewSession({
   }, []);
 
   const grade = useRef<(g: Grade) => void>(() => {});
-  grade.current = (g: Grade) => {
+  grade.current = (requested: Grade) => {
     const card = queue[0];
     if (!card) return;
+    const g: Grade = timedOut ? "again" : requested;
     const result = scheduleCard(card, g);
+    if (timedOut) result.dueInMin = FORCED_AGAIN_MIN;
     const reps = card.reps + 1;
     const lapses = g === "again" && card.type === 2 ? card.lapses + 1 : card.lapses;
     const mod = Math.floor(Date.now() / 1000);
@@ -1973,6 +2128,7 @@ function ReviewSession({
       setQueue(rest);
     }
     setRevealed(false);
+    setTimerEpoch((n) => n + 1);
   };
 
   const undo = useRef<() => void>(() => {});
@@ -1999,6 +2155,7 @@ function ReviewSession({
     setPending((p) => p.filter((x) => x.card.id !== action.graded.id));
     lastActions.current = stack.slice(0, -1);
     setRevealed(false);
+    setTimerEpoch((n) => n + 1);
   };
 
   // Polls for pending learning/relearning cards whose step delay has
@@ -2113,34 +2270,50 @@ function ReviewSession({
 
   return (
     <div className="fixed inset-0 z-30 flex flex-col overflow-hidden bg-zinc-100 dark:bg-zinc-950 px-4 sm:px-8 pt-4 sm:pt-8">
-      <div className="w-full shrink-0 flex items-center justify-between">
+      <div className="relative w-full shrink-0 flex items-start justify-between">
+        {timerOn && (
+          <TimerBar
+            key={timerSegment}
+            timer={timerRemaining}
+            segment={timerSegment}
+            running={timerRunning}
+            timedOut={timedOut}
+          />
+        )}
         <button
           onClick={onExit}
           className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
         >
           ← {DECK_LABELS[current.source]}
         </button>
-        <div className="flex items-center gap-4">
+        {/* On mobile, Undo is a full-width rectangle under the icon row —
+            a bigger tap target than another 16px icon squeezed in the row.
+            h-5 on the icon row matches the back button's text-sm line
+            height, so both stay aligned now that the header is items-start. */}
+        <div className="flex flex-col items-stretch gap-2">
+          <div className="flex items-center justify-end gap-4 h-5">
+            {current.source === "hanzi" && (
+              <div className="hidden md:flex">
+                <TrackpadToggleButton />
+              </div>
+            )}
+            {current.source === "hanzi" && <GridToggleButton />}
+            <TimerToggleButton on={timerOn} onToggle={toggleTimer} />
+            <AudioControl />
+            <div className="hidden md:block">
+              <HotkeysPanel source={current.source} />
+            </div>
+          </div>
           <button
             onClick={() => { if (revealed) setRevealed(false); else undo.current(); }}
             aria-label="Undo"
             title="Undo (U)"
-            className="md:hidden text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+            className="md:hidden flex items-center justify-center h-9 min-w-[5rem] rounded-lg border border-zinc-200 dark:border-zinc-800/70 text-zinc-400 dark:text-zinc-500 active:bg-zinc-200/60 dark:active:bg-zinc-900 transition-colors"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
               <path fillRule="evenodd" d="M7.793 2.232a.75.75 0 01-.025 1.06L3.622 7.25h10.128a5.5 5.5 0 010 11H10.5a.75.75 0 010-1.5h3.25a4 4 0 000-8H3.622l4.146 3.957a.75.75 0 01-1.036 1.085l-5.5-5.25a.75.75 0 010-1.085l5.5-5.25a.75.75 0 011.06.025z" clipRule="evenodd" />
             </svg>
           </button>
-          <AudioControl />
-          {current.source === "hanzi" && (
-            <div className="hidden md:flex items-center gap-4">
-              <TrackpadToggleButton />
-              <GridToggleButton />
-            </div>
-          )}
-          <div className="hidden md:block">
-            <HotkeysPanel source={current.source} />
-          </div>
         </div>
       </div>
 
@@ -2330,6 +2503,16 @@ function ReviewSession({
                 Show Answer
               </button>
             </>
+          ) : timedOut ? (
+            <div className="flex flex-col items-center gap-1.5 w-full max-w-[8.5rem]">
+              <span className="text-xs font-medium text-red-500 dark:text-red-400">Time&apos;s up · {formatMinutes(FORCED_AGAIN_MIN)}</span>
+              <button
+                onClick={(e) => { e.currentTarget.blur(); grade.current("again"); }}
+                className="w-full rounded-full border border-zinc-300 dark:border-zinc-600 py-2 text-sm text-zinc-800 dark:text-zinc-100 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+              >
+                Again
+              </button>
+            </div>
           ) : (
             <div className="grid grid-cols-4 gap-2 w-full max-w-xl">
               {GRADES.map(({ key, label }) => {
