@@ -872,6 +872,14 @@ def pick_example_words(character: str, count: int = 3, pronunciation: str = "") 
         return groups
 
     groups = collect_grouped()
+    # An empty group is dropped rather than shown, which also drops its " / "
+    # separator — daily_words then no longer lines up with the card's
+    # readings (e.g. 盛's cheng2 had no compound at all, so all three slots
+    # went to sheng4). Usually means the reading is rare enough to prune from
+    # `pronunciation`; flag it so that doesn't go unnoticed again.
+    for r in readings:
+        if not groups[r]:
+            print(f"  WARNING {character}: no example words for reading {r} — consider dropping it from pronunciation")
     return [groups[r] for r in readings if groups[r]]
 
 

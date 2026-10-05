@@ -61,6 +61,34 @@ function resolveComponents(componentChars) {
   }));
 }
 
+// getExamples() keeps only the first CC-CEDICT entry per word, which is
+// sometimes a bare cross-reference — e.g. 仿佛's "variant of 彷彿|仿佛[fang3
+// fu2]" while its second entry is the real "to seem/as if", or 标识's only
+// zhi4 entry "variant of 標誌|标志[biao1 zhi4]". daily_refresh.py's rarity
+// filter (mirrors this regex) drops pure cross-refs, which silently cost 佛
+// its fú reading and 识 its zhì reading. Resolve to the word's own non-
+// cross-ref entry with the same pinyin, else the cross-ref target's.
+const CROSS_REF_RE = /(?:^see |\bvariant of )\S+\[[^\]]+\]$/;
+const isCrossRef = (definition) =>
+  definition.split('/').every((s) => CROSS_REF_RE.test(s.trim()));
+
+function resolveDefinition(word, pinyin, definition) {
+  if (!isCrossRef(definition)) return definition;
+  const samePinyin = (entries, p) =>
+    (entries || []).find((e) => e.pinyin.toLowerCase() === p.toLowerCase() && !isCrossRef(e.definition));
+
+  const own = samePinyin(hanzi.definitionLookup(word), pinyin);
+  if (own) return own.definition;
+
+  const m = definition.match(/(\S+)\[([^\]]+)\]$/);
+  if (m) {
+    const target = m[1].split('|').pop();
+    const resolved = samePinyin(hanzi.definitionLookup(target), m[2]);
+    if (resolved) return resolved.definition;
+  }
+  return definition;
+}
+
 function lookupCharacter(char) {
   if (!hanzi.ifComponentExists(char) && hanzi.getPinyin(char).length === 0) {
     return { character: char, error: 'not found' };
@@ -81,7 +109,7 @@ function lookupCharacter(char) {
       simplified: w.simplified,
       traditional: w.traditional,
       pinyin: w.pinyin,
-      definition: w.definition,
+      definition: resolveDefinition(w.simplified, w.pinyin, w.definition),
     }));
 
   const freq = hanzi.getCharacterFrequency(char);
