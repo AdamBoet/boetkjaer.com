@@ -1064,7 +1064,21 @@ def build_components(components: dict, char: str, front: str) -> str:
     def usable(entries):
         return [(e["component"], e["meaning"]) for e in entries if e["meaning"].strip().lower() not in _UNUSABLE_COMPONENT_MEANINGS]
 
-    picked = usable(components.get("once", [])) or usable(components.get("radical", []))
+    once = components.get("once", [])
+    radical = components.get("radical", [])
+    once_ok, radical_ok = usable(once), usable(radical)
+    # Filtering N/A entries out of the once-level split can leave a partial
+    # breakdown — 培 is 土 + 咅, and 咅 has no meaning, so it came out as just
+    # "土 (earth)" with the whole right side missing. Only take the once
+    # level when every part survived; otherwise prefer the finer radical
+    # level (培 -> 土, 立, 口) if that one's complete, and failing both, the
+    # level that lost the least.
+    if once and len(once_ok) == len(once):
+        picked = once_ok
+    elif radical and len(radical_ok) == len(radical):
+        picked = radical_ok
+    else:
+        picked = max(once_ok, radical_ok, key=len)
     if not picked:
         # front may join multiple readings with " / " — take just the first
         # reading's gloss (first "(" to the next ")"), not everything up to
