@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useEffect, useLayoutEffect, type MouseEvent as ReactMouseEvent } from "react";
+import { useMemo, useRef, useState, useEffect, useLayoutEffect, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { type HanziCard } from "./CharacterGrid";
 import { cardDueDiff } from "./card-utils";
@@ -835,7 +835,7 @@ const GRADES: { key: Grade; label: string }[] = [
   { key: "easy", label: "Easy" },
 ];
 
-function HotkeyRow({ keys, description }: { keys: string[]; description: string }) {
+export function HotkeyRow({ keys, description }: { keys: string[]; description: string }) {
   return (
     <div className="flex items-center justify-between gap-3 text-xs text-zinc-500 dark:text-zinc-400">
       <span>{description}</span>
@@ -917,7 +917,7 @@ function timerMsLeft(t: TimerState, segment: string): number {
   return t.startedAt == null ? t.ms : Math.max(0, t.ms - (Date.now() - t.startedAt));
 }
 
-const TIMER_STRIPES =
+export const TIMER_STRIPES =
   "repeating-linear-gradient(-45deg, transparent, transparent 5px, rgba(255,255,255,0.3) 5px, rgba(255,255,255,0.3) 10px)";
 
 // Same striped pill as the hanzi page's yearly-goal bar. Ticks on its own
@@ -989,7 +989,9 @@ function timerColor(frac: number): string {
   return `rgb(${TIMER_COLOR_STOPS[TIMER_COLOR_STOPS.length - 1][1].join(", ")})`;
 }
 
-function HotkeysPanel({ source }: { source: DeckKey }) {
+// `children` replaces the review's own rows — lets other tabs (e.g. Text)
+// reuse the same dropdown with their own hotkeys.
+export function HotkeysPanel({ source, children }: { source?: DeckKey; children?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -1019,16 +1021,20 @@ function HotkeysPanel({ source }: { source: DeckKey }) {
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-3 w-56 space-y-2.5 z-20 text-left animate-dropdown-in">
-          <HotkeyRow keys={["Space"]} description="Show answer / Good" />
-          <HotkeyRow keys={["1"]} description="Again" />
-          <HotkeyRow keys={["2"]} description="Hard" />
-          <HotkeyRow keys={["3"]} description="Good" />
-          <HotkeyRow keys={["4"]} description="Easy" />
-          <HotkeyRow keys={["U"]} description="Undo" />
-          <HotkeyRow keys={["E"]} description="Edit card" />
-          {source === "hanzi" && <HotkeyRow keys={["R"]} description="Redraw character" />}
-          {source === "hanzi" && <HotkeyRow keys={["T"]} description="Toggle trackpad mode" />}
-          <HotkeyRow keys={["B"]} description="Open in Browse" />
+          {children ?? (
+            <>
+              <HotkeyRow keys={["Space"]} description="Show answer / Good" />
+              <HotkeyRow keys={["1"]} description="Again" />
+              <HotkeyRow keys={["2"]} description="Hard" />
+              <HotkeyRow keys={["3"]} description="Good" />
+              <HotkeyRow keys={["4"]} description="Easy" />
+              <HotkeyRow keys={["U"]} description="Undo" />
+              <HotkeyRow keys={["E"]} description="Edit card" />
+              {source === "hanzi" && <HotkeyRow keys={["R"]} description="Redraw character" />}
+              {source === "hanzi" && <HotkeyRow keys={["T"]} description="Toggle trackpad mode" />}
+              <HotkeyRow keys={["B"]} description="Open in Browse" />
+            </>
+          )}
         </div>
       )}
     </div>

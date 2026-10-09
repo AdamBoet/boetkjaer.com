@@ -8,6 +8,7 @@ import FlashcardTab, { type WordPhrase, type DeckKey, type CardStatPatch } from 
 import HanziTab from "./HanziTab";
 import BrowseTab from "./BrowseTab";
 import StatsTab from "./StatsTab";
+import TextTab from "./TextTab";
 import { useReviewing } from "../../components/ReviewingContext";
 
 const YEARLY_GOAL = 1500;
@@ -224,7 +225,7 @@ export default function HanziDashboard({
   const [ankiUrl, setAnkiUrl] = useState("http://localhost:8765");
   const [deckName, setDeckName] = useState("Mandarin::汉字 writing");
   const settingsRef = useRef<HTMLDivElement>(null);
-  const [tab, setTab] = useState<"flashcards" | "hanzi" | "hsk3" | "browse" | "stats">("flashcards");
+  const [tab, setTab] = useState<"flashcards" | "hanzi" | "hsk3" | "browse" | "text" | "stats">("flashcards");
   // Bridges the flashcard review's "open in Browse" shortcut (B) to the
   // Browse tab, which reads it once, jumps to that row, then clears it.
   const [focusCard, setFocusCard] = useState<{ source: DeckKey; dbId: number | string } | null>(null);
@@ -683,7 +684,7 @@ export default function HanziDashboard({
       <NotificationPrompt />
       {!reviewing && (
         <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 border-b border-zinc-200 dark:border-zinc-800">
-          {(["flashcards", "hanzi", "hsk3", "browse", "stats"] as const).map((t) => (
+          {(["flashcards", "hanzi", "hsk3", "browse", "text", "stats"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -701,6 +702,8 @@ export default function HanziDashboard({
                 ? "HSK 3.0"
                 : t === "browse"
                 ? "Browse"
+                : t === "text"
+                ? "Text"
                 : "Statistics"}
             </button>
           ))}
@@ -743,6 +746,8 @@ export default function HanziDashboard({
           onFocusHandled={() => setFocusCard(null)}
         />
       )}
+
+      {tab === "text" && <TextTab />}
 
       {tab === "stats" && <StatsTab cards={cards} hsk3Coverage={hsk3Coverage} wordsPhrases={wordsPhrases} />}
     </div>
