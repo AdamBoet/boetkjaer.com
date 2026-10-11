@@ -617,11 +617,12 @@ def parse_readings(pronunciation: str) -> list[str]:
 # reading as a cross-reference to the "real" entry with no content of its
 # own — either "see X[Y]" (e.g. 熟's shou2: "see 熟[shu2]") or "(archaic
 # |old )?variant of X[Y]" (e.g. 女's ru3: "archaic variant of 汝[ru3]") —
-# shú/nǚ are the actual common readings in both cases. Shared by both
+# shú/nǚ are the actual common readings in both cases. The [Y] pinyin is
+# sometimes missing (e.g. 赞: "variant of 贊|赞"), so it's optional. Shared by both
 # pick_example_words (filtering candidate example words) and
 # build_pronunciation_and_front (filtering readings).
 _RARITY_MARKERS = ("(archaic)", "(dialect)", "(literary)", "(old)", "old term for", "old name for")
-_CROSS_REF_RE = re.compile(r"(?:^see |\bvariant of )\S+\[[^\]]+\]$")
+_CROSS_REF_RE = re.compile(r"(?:^see |\bvariant of )\S+(?:\[[^\]]+\])?$")
 
 
 def _is_rare_sense(sense: str) -> bool:
