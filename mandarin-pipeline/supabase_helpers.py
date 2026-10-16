@@ -11,6 +11,7 @@ SUPABASE_SERVICE_ROLE_KEY (same values as the Botkjaer.com repo's
 .env.local — same Supabase project).
 """
 
+import calendar
 import json
 import os
 import re
@@ -129,6 +130,72 @@ def upload_media(data: bytes, content_type: str, path: str) -> str:
         extra_headers={"Content-Type": content_type, "x-upsert": "true"},
     )
     return f"{SUPABASE_URL}/storage/v1/object/public/{BUCKET}/{path}"
+
+
+# Folders only ever written by daily_refresh.py's TTS. Pictures, screenshots
+# and edits/ (uploaded from the site) are deliberately never swept.
+AUDIO_PREFIXES = ("hanzi-words", "hsk3-sentence-audio", "wordphrase-sentence-audio", "sentences")
+# Every table that can hold a mandarin-media URL, with its primary key for
+# stable paging. Whole rows are scanned, not named columns, so a URL in a
+# newly added column can't be mistaken for an orphan.
+_MEDIA_REF_TABLES = {"hanzi_cards": "note_id", "hsk3_words": "word", "words_phrases": "note_id", "screenshot_queue": "id"}
+_MEDIA_PATH_RE = re.compile(r"/mandarin-media/([A-Za-z0-9_./%-]+)")
+
+
+def _referenced_media_paths() -> set:
+    refs = set()
+    for table, pk in _MEDIA_REF_TABLES.items():
+        offset = 0
+        while True:
+            rows = sb_select(table, f"select=*&order={pk}.asc&limit=1000&offset={offset}")
+            for row in rows:
+                refs.update(_MEDIA_PATH_RE.findall(json.dumps(row, ensure_ascii=False)))
+            if len(rows) < 1000:
+                break
+            offset += 1000
+    return refs
+
+
+def sweep_orphaned_audio(min_age_hours: float = 1.0, dry_run: bool = False) -> tuple:
+    """Deletes TTS audio no row points to any more. Every regeneration
+    uploads under a fresh timestamped path and repoints the row, so the old
+    clip is left behind (~180MB/week as WAV — enough to blow through the
+    free-plan storage quota). Files younger than min_age_hours are kept in
+    case an overlapping run uploaded them but hasn't written its row yet.
+    Returns (files, bytes)."""
+    refs = _referenced_media_paths()
+    if not any(r.startswith(AUDIO_PREFIXES) for r in refs):
+        # Zero referenced audio means the scan itself went wrong — never
+        # treat that as "everything is an orphan".
+        raise RuntimeError("found no referenced audio at all, refusing to sweep")
+    cutoff = time.time() - min_age_hours * 3600
+    orphans, orphan_bytes = [], 0
+    for prefix in AUDIO_PREFIXES:
+        offset = 0
+        while True:
+            items = sb_request("POST", f"/storage/v1/object/list/{BUCKET}", body={
+                "prefix": prefix, "limit": 1000, "offset": offset,
+                "sortBy": {"column": "name", "order": "asc"},
+            }) or []
+            for item in items:
+                if item.get("id") is None:  # a sub-folder placeholder, not a file
+                    continue
+                path = f"{prefix}/{item['name']}"
+                try:
+                    created = time.strptime(item["created_at"][:19], "%Y-%m-%dT%H:%M:%S")
+                except (KeyError, TypeError, ValueError):
+                    continue  # unknown age: keep the file
+                if path not in refs and calendar.timegm(created) < cutoff:
+                    orphans.append(path)
+                    orphan_bytes += int((item.get("metadata") or {}).get("size") or 0)
+            if len(items) < 1000:
+                break
+            offset += 1000
+    if not dry_run:
+        for i in range(0, len(orphans), 1000):
+            sb_request("DELETE", f"/storage/v1/object/{BUCKET}", body={"prefixes": orphans[i:i + 1000]})
+    print(f"  audio sweep: {'would delete' if dry_run else 'deleted'} {len(orphans)} orphaned files ({orphan_bytes / 1e6:.0f} MB)")
+    return len(orphans), orphan_bytes
 
 
 _CJK_RE = re.compile(r"[一-鿿㐀-䶿]+")

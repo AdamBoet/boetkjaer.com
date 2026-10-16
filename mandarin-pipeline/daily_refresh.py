@@ -57,7 +57,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(__file__))
-from supabase_helpers import sb_select, sb_insert, sb_request, upload_media, ENV, _CJK_RE, _SSL_CTX, next_negative_note_id  # noqa: E402
+from supabase_helpers import sb_select, sb_insert, sb_request, upload_media, sweep_orphaned_audio, ENV, _CJK_RE, _SSL_CTX, next_negative_note_id  # noqa: E402
 
 from llama_cpp import Llama
 from kokoro import KPipeline
@@ -378,23 +378,28 @@ def synthesize(text: str, voice: str = DEFAULT_SETTINGS["voice"], speed: float =
     raise RuntimeError(f"Kokoro produced no audio for: {text!r}")
 
 
-def upload_wav(samples, path_prefix: str, key: str) -> str:
+def upload_audio(samples, path_prefix: str, key: str) -> str:
+    # MP3, not WAV: raw 24kHz WAV was ~130KB per clip and, regenerated
+    # nightly, pushed the bucket past the Supabase free-plan storage quota.
     # A shared fixed tmp path breaks if two runs overlap (e.g. a manual test
     # while the launchd job is also active) — each call gets its own file.
-    tmp_wav = tempfile.mktemp(suffix=".wav")
+    tmp_mp3 = tempfile.mktemp(suffix=".mp3")
     try:
-        sf.write(tmp_wav, samples, 24000)
-        with open(tmp_wav, "rb") as f:
+        # compression_level 0.6 = 64kbps CBR, clean for mono speech; the
+        # libsndfile default is VBR at ~13kbps, audibly lossy.
+        sf.write(tmp_mp3, samples, 24000, format="MP3", subtype="MPEG_LAYER_III",
+                 bitrate_mode="CONSTANT", compression_level=0.6)
+        with open(tmp_mp3, "rb") as f:
             data = f.read()
     finally:
-        if os.path.exists(tmp_wav):
-            os.unlink(tmp_wav)
+        if os.path.exists(tmp_mp3):
+            os.unlink(tmp_mp3)
     # Supabase Storage keys must be ASCII — hash non-ASCII keys (e.g. a
     # Chinese word, for tables with no numeric id to key off of) rather
     # than relying on percent-encoding, which Storage still rejects.
     safe_key = key if key.isascii() else hashlib.md5(key.encode()).hexdigest()[:16]
-    path = f"{path_prefix}/{safe_key}-{int(time.time())}.wav"
-    return upload_media(data, "audio/wav", path)
+    path = f"{path_prefix}/{safe_key}-{int(time.time())}.mp3"
+    return upload_media(data, "audio/mpeg", path)
 
 
 def trim_silence(audio, threshold: float = 0.01):
@@ -440,12 +445,12 @@ def generate_audio_url(word: str, sentence: str, path_prefix: str, key: str, voi
     sentence, so the standalone word is slowed down slightly to compensate.
     0.9 is a measured floor — anything below it (tested 0.8, 0.85) makes
     Kokoro stutter the first syllable of a short word (e.g. "zh-zhaopin")."""
-    return upload_wav(concat_with_pauses([spoken_word(word), sentence], voice, speeds=[0.9, 1.0]), path_prefix, key)
+    return upload_audio(concat_with_pauses([spoken_word(word), sentence], voice, speeds=[0.9, 1.0]), path_prefix, key)
 
 
 def generate_word_list_audio(words: list[str], path_prefix: str, key: str, voice: str = DEFAULT_SETTINGS["voice"]) -> str:
     """One clip narrating each example word in sequence, pausing between."""
-    return upload_wav(concat_with_pauses(words, voice), path_prefix, key)
+    return upload_audio(concat_with_pauses(words, voice), path_prefix, key)
 
 
 MAX_ATTEMPTS = 5
@@ -1771,6 +1776,10 @@ def main():
     wp_ok, wp_failed, wp_due = run_step("words_phrases refresh", refresh_words_phrases, (0, 0, 0))
     hanzi_ok, hanzi_failed, hanzi_due = run_step("hanzi refresh", refresh_hanzi, (0, 0, 0))
     hanzi_added, hanzi_add_failed, hanzi_shortfall = run_step("hanzi replenish", replenish_hanzi_new_cards, (0, 0, 0))
+    # Every refresh uploads new audio under a fresh timestamped path and
+    # repoints the row, orphaning the previous clip. Sweep after all writing
+    # steps so nothing this run just uploaded is touched.
+    run_step("audio sweep", lambda _limit, _settings: sweep_orphaned_audio(), None)
 
     total_due = hsk3_due + wp_due + hanzi_due
     total_ok = screenshot_ok + hsk3_ok + wp_ok + hanzi_ok + hsk3_added + hanzi_added
