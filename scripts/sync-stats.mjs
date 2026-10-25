@@ -16,7 +16,7 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
 const CARDS_DIR =
-  "/Users/adam/Dokumenter/Documents/Claude projects/Anki flashcards/Anki 汉字/cards";
+  "/Users/adam/Dokumenter/Documents/Projects/Cache/Anki flashcards/Anki 汉字/cards";
 const ANKI_URL = "http://localhost:8765";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
