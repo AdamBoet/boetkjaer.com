@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState, useEffect, useLayoutEffect, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { createContext, useContext, useMemo, useRef, useState, useEffect, useLayoutEffect, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { type HanziCard } from "./CharacterGrid";
 import { cardDueDiff } from "./card-utils";
@@ -1239,19 +1239,46 @@ async function fetchWordSegments(text: string): Promise<WordSegment[] | null> {
 // — a word can have more than one entry (distinct reading + meaning, e.g.
 // 东西 dōngxī "east and west" vs. dōngxi "thing/stuff"), so every entry is
 // shown stacked, same as Pleco/MandarinSpot-style popups.
+// Hanzi-deck characters reviewed at least once. Provided by FlashcardTab
+// via context (the popup is rendered several components deep inside
+// ReviewSession); context still reaches it through the createPortal.
+const LearnedHanziContext = createContext<ReadonlySet<string>>(new Set());
+
 function WordInfoPopup({ segment, maxHeight }: { segment: WordSegment; maxHeight?: number }) {
   const traditional = segment.entries[0]?.traditional;
+  // Keyed by the whole segment word, so only a single character (including
+  // one drilled into inside a multi-character word) can ever match.
+  const learned = useContext(LearnedHanziContext).has(segment.word);
   return (
     <div
       className="w-64 overflow-y-auto overscroll-contain rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl p-3.5 text-sm text-left text-zinc-900 dark:text-zinc-100 space-y-2.5"
       style={{ maxHeight }}
     >
-      <p className="text-lg font-medium leading-none">
-        {segment.word}
-        {traditional && traditional !== segment.word && (
-          <span className="text-zinc-400 dark:text-zinc-500 text-sm font-normal ml-1.5">[{traditional}]</span>
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-lg font-medium leading-none">
+          {segment.word}
+          {traditional && traditional !== segment.word && (
+            <span className="text-zinc-400 dark:text-zinc-500 text-sm font-normal ml-1.5">[{traditional}]</span>
+          )}
+        </p>
+        {learned && (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="3"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="shrink-0 text-emerald-600 dark:text-emerald-500"
+            aria-label="Learned"
+          >
+            <title>Learned</title>
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
         )}
-      </p>
+      </div>
       <div className="space-y-2">
         {segment.entries.map((entry, i) => (
           <div key={i}>
@@ -2608,6 +2635,13 @@ export default function FlashcardTab({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
+  // `cards` is patched live after each grade (HanziDashboard's
+  // handleCardUpdated), so a character's first review shows up immediately.
+  const learnedHanzi = useMemo(
+    () => new Set(cards.filter((c) => !isNeverStudied(c.reps)).map((c) => c.character)),
+    [cards]
+  );
+
   // Space bar = Study Now on the deck-overview screen, mirroring its use
   // as the primary reveal/grade action once inside a review session.
   useEffect(() => {
@@ -2952,17 +2986,19 @@ export default function FlashcardTab({
   return (
     <TrackpadModeProvider key={selectedDeck}>
       <GridPrefProvider>
-        <ReviewSession
-          initialQueue={queue}
-          initialPending={pending}
-          newTodayIds={newTodayIds}
-          onExit={() => {
-            setSelectedDeck(null);
-            setOverviewFor(null);
-          }}
-          onJumpToCard={onJumpToCard}
-          onCardUpdated={onCardUpdated}
-        />
+        <LearnedHanziContext.Provider value={learnedHanzi}>
+          <ReviewSession
+            initialQueue={queue}
+            initialPending={pending}
+            newTodayIds={newTodayIds}
+            onExit={() => {
+              setSelectedDeck(null);
+              setOverviewFor(null);
+            }}
+            onJumpToCard={onJumpToCard}
+            onCardUpdated={onCardUpdated}
+          />
+        </LearnedHanziContext.Provider>
       </GridPrefProvider>
     </TrackpadModeProvider>
   );
