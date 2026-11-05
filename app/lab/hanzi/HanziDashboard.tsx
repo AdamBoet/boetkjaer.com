@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { Fragment, useState, useEffect, useRef } from "react";
 import { useTheme } from "next-themes";
 import { type HanziCard } from "./CharacterGrid";
 import Hsk3Grid, { type Hsk3Coverage } from "./Hsk3Grid";
@@ -9,6 +9,7 @@ import HanziTab from "./HanziTab";
 import BrowseTab from "./BrowseTab";
 import StatsTab from "./StatsTab";
 import TextTab from "./TextTab";
+import SongsTab from "./SongsTab";
 import { useReviewing } from "../../components/ReviewingContext";
 
 const YEARLY_GOAL = 1500;
@@ -225,7 +226,7 @@ export default function HanziDashboard({
   const [ankiUrl, setAnkiUrl] = useState("http://localhost:8765");
   const [deckName, setDeckName] = useState("Mandarin::汉字 writing");
   const settingsRef = useRef<HTMLDivElement>(null);
-  const [tab, setTab] = useState<"flashcards" | "hanzi" | "hsk3" | "browse" | "text" | "stats">("flashcards");
+  const [tab, setTab] = useState<"flashcards" | "hanzi" | "hsk3" | "browse" | "text" | "songs" | "stats">("flashcards");
   // Bridges the flashcard review's "open in Browse" shortcut (B) to the
   // Browse tab, which reads it once, jumps to that row, then clears it.
   const [focusCard, setFocusCard] = useState<{ source: DeckKey; dbId: number | string } | null>(null);
@@ -684,28 +685,32 @@ export default function HanziDashboard({
       <NotificationPrompt />
       {!reviewing && (
         <div className="flex items-center gap-1 overflow-x-auto -mx-1 px-1 border-b border-zinc-200 dark:border-zinc-800">
-          {(["flashcards", "hanzi", "hsk3", "browse", "text", "stats"] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-                tab === t
-                  ? "border-zinc-800 dark:border-zinc-200 text-zinc-900 dark:text-zinc-100"
-                  : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-              }`}
-            >
-              {t === "flashcards"
-                ? "Flashcards"
-                : t === "hanzi"
-                ? "Hanzi"
-                : t === "hsk3"
-                ? "HSK 3.0"
-                : t === "browse"
-                ? "Browse"
-                : t === "text"
-                ? "Text"
-                : "Statistics"}
-            </button>
+          {(["flashcards", "hanzi", "hsk3", "browse", "stats", "text", "songs"] as const).map((t) => (
+            <Fragment key={t}>
+              {t === "text" && <span aria-hidden className="shrink-0 h-4 w-px mx-2 bg-zinc-300 dark:bg-zinc-700" />}
+              <button
+                onClick={() => setTab(t)}
+                className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                  tab === t
+                    ? "border-zinc-800 dark:border-zinc-200 text-zinc-900 dark:text-zinc-100"
+                    : "border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                }`}
+              >
+                {t === "flashcards"
+                  ? "Flashcards"
+                  : t === "hanzi"
+                  ? "Hanzi"
+                  : t === "hsk3"
+                  ? "HSK 3.0"
+                  : t === "browse"
+                  ? "Browse"
+                  : t === "text"
+                  ? "Pinyin game"
+                  : t === "songs"
+                  ? "Songs"
+                  : "Statistics"}
+              </button>
+            </Fragment>
           ))}
         </div>
       )}
@@ -748,6 +753,8 @@ export default function HanziDashboard({
       )}
 
       {tab === "text" && <TextTab />}
+
+      {tab === "songs" && <SongsTab />}
 
       {tab === "stats" && <StatsTab cards={cards} hsk3Coverage={hsk3Coverage} wordsPhrases={wordsPhrases} />}
     </div>

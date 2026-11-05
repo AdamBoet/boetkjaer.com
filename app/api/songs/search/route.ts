@@ -1,0 +1,23 @@
+import { NextRequest, NextResponse } from "next/server";
+import { searchSongs } from "@/lib/lrclib";
+
+export async function GET(req: NextRequest) {
+  const q = req.nextUrl.searchParams.get("q")?.trim();
+  if (!q) return NextResponse.json({ error: "Missing q" }, { status: 400 });
+  if (q.length > 100) return NextResponse.json({ error: "Search is too long" }, { status: 400 });
+
+  try {
+    const songs = await searchSongs(q);
+    // Full lyrics are only needed once a result is picked and saved.
+    const results = songs.map(({ lrclibId, title, artist, durationSeconds, lyrics }) => ({
+      lrclibId,
+      title,
+      artist,
+      durationSeconds,
+      preview: lyrics.split("\n")[0],
+    }));
+    return NextResponse.json({ results });
+  } catch (e) {
+    return NextResponse.json({ error: e instanceof Error ? e.message : "Search failed" }, { status: 502 });
+  }
+}

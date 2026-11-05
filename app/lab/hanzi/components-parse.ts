@@ -54,20 +54,3 @@ export const RADICAL_BASE: Record<string, string> = {
 export function lookupKey(char: string): string {
   return RADICAL_BASE[char] ?? char;
 }
-
-const STOPWORDS = new Set(["the", "and", "for", "with", "from", "that", "this"]);
-
-// Pinyin to show for a component. CC-CEDICT lists readings alphabetically,
-// not by frequency, so prefer readings whose dictionary meaning overlaps the
-// meaning already written on the card (石 "stone" -> shí, not dàn), skip
-// capitalised proper-noun readings, and cap at two.
-export function pickPinyin(entries: { pinyin: string; meaning: string }[], inlineMeaning: string | null): string {
-  const common = entries.filter((e) => !/^[A-Z]/.test(e.pinyin));
-  const pool = common.length > 0 ? common : entries;
-  const words = ((inlineMeaning ?? "").toLowerCase().match(/[a-z]{3,}/g) ?? []).filter((w) => !STOPWORDS.has(w));
-  const matching = words.length
-    ? pool.filter((e) => words.some((w) => new RegExp(`\\b${w}`).test(e.meaning.toLowerCase())))
-    : [];
-  const chosen = matching.length > 0 ? matching : pool;
-  return [...new Set(chosen.map((e) => e.pinyin))].slice(0, 2).join(" / ");
-}

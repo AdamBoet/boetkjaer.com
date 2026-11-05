@@ -9,7 +9,7 @@ import HanziWritingBox from "./HanziWritingBox";
 import { TrackpadModeProvider, useTrackpadModeContext } from "./TrackpadModeContext";
 import { GridPrefProvider, useGridPref } from "./GridPrefContext";
 import ScreenshotUploadButton from "./ScreenshotUploadButton";
-import { parseComponents, lookupKey, pickPinyin, type ComponentPart } from "./components-parse";
+import { parseComponents, lookupKey, type ComponentPart } from "./components-parse";
 
 export interface WordPhrase {
   note_id: number;
@@ -1244,7 +1244,19 @@ async function fetchWordSegments(text: string): Promise<WordSegment[] | null> {
 // ReviewSession); context still reaches it through the createPortal.
 const LearnedHanziContext = createContext<ReadonlySet<string>>(new Set());
 
-function WordInfoPopup({ segment, maxHeight }: { segment: WordSegment; maxHeight?: number }) {
+// `note` is a component's meaning as written on the card (ComponentsLine) —
+// it can differ from the standalone dictionary sense, e.g. 王 standing for
+// 玉 "jade" inside 珠, so it's shown above the entries rather than replacing
+// them.
+function WordInfoPopup({
+  segment,
+  maxHeight,
+  note,
+}: {
+  segment: WordSegment;
+  maxHeight?: number;
+  note?: string | null;
+}) {
   const traditional = segment.entries[0]?.traditional;
   // Keyed by the whole segment word, so only a single character (including
   // one drilled into inside a multi-character word) can ever match.
@@ -1279,6 +1291,16 @@ function WordInfoPopup({ segment, maxHeight }: { segment: WordSegment; maxHeight
           </svg>
         )}
       </div>
+      {note && (
+        <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-snug">
+          <span className="text-zinc-400 dark:text-zinc-500">as a component: </span>
+          {note}
+        </p>
+      )}
+      {/* Rare components often have no CC-CEDICT entry of their own. */}
+      {segment.entries.length === 0 && (
+        <p className="text-xs text-zinc-400 dark:text-zinc-500 italic">No dictionary entry</p>
+      )}
       <div className="space-y-2">
         {segment.entries.map((entry, i) => (
           <div key={i}>
@@ -1308,7 +1330,7 @@ function WordInfoPopup({ segment, maxHeight }: { segment: WordSegment; maxHeight
 // in favor of one lookup, one style, everywhere. While the segmentation
 // fetch is in flight, or if it fails, the text is just plain/non-
 // interactive — never blocks, never shows stale or wrong data.
-function ClickableHanziWord({ text }: { text: string }) {
+export function ClickableHanziWord({ text }: { text: string }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [segments, setSegments] = useState<WordSegment[] | null>(null);
@@ -1323,6 +1345,7 @@ function ClickableHanziWord({ text }: { text: string }) {
   const [drillCharIndex, setDrillCharIndex] = useState<number | null>(null);
   const [drillSegments, setDrillSegments] = useState<WordSegment[] | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
     if (!text) {
@@ -1375,7 +1398,16 @@ function ClickableHanziWord({ text }: { text: string }) {
     function handleOutsideClick(e: MouseEvent) {
       const target = e.target as Node;
       if (popupRef.current?.contains(target)) return;
-      if (target instanceof Element && target.closest("[data-word-lookup-target]")) return;
+      if (target instanceof Element && target.closest("[data-word-lookup-target]")) {
+        // A word in this instance switches words itself; a word in another
+        // instance opens its own popup, so this one has to close.
+        if (!rootRef.current?.contains(target)) {
+          setOpenIndex(null);
+          setHoverIndex(null);
+          setDrillCharIndex(null);
+        }
+        return;
+      }
       e.stopPropagation();
       e.preventDefault();
       setOpenIndex(null);
@@ -1425,7 +1457,7 @@ function ClickableHanziWord({ text }: { text: string }) {
   }
 
   return (
-    <span>
+    <span ref={rootRef}>
       {segments
         ? segments.map((seg, i) => {
             if (seg.entries.length === 0) return <span key={i}>{seg.word}</span>;
@@ -1492,35 +1524,12 @@ function ClickableHanziWord({ text }: { text: string }) {
   );
 }
 
-function ComponentInfoPopup({
-  char,
-  pinyin,
-  meaning,
-  maxHeight,
-}: {
-  char: string;
-  pinyin: string;
-  meaning: string | null;
-  maxHeight?: number;
-}) {
-  return (
-    <div
-      style={{ maxHeight }}
-      className="max-w-[14rem] overflow-y-auto overscroll-contain rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 shadow-2xl px-3 py-2 text-left text-zinc-900 dark:text-zinc-100">
-      <p className="flex items-baseline gap-2">
-        <span className="text-lg font-medium leading-none">{char}</span>
-        {pinyin && <span className="text-xs text-emerald-700 dark:text-emerald-500 font-medium">{pinyin}</span>}
-      </p>
-      {meaning && <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-300 leading-snug">{meaning}</p>}
-    </div>
-  );
-}
-
 // A card's "components" line ("氵 (water), 青 (green; blue)") with each
-// component hoverable/tappable for its pinyin + meaning. The meaning shown is
-// the one already written on the card; only the pinyin is looked up, via the
-// same cached /api/word-lookup as ClickableHanziWord (radical variants like 氵
-// are looked up under the full character they stand for). Deliberately a
+// component hoverable/tappable, opening the same WordInfoPopup as any other
+// character: the card's own component meaning on top, then the full entries
+// from the same cached /api/word-lookup as ClickableHanziWord (radical
+// variants like 氵 are looked up under the full character they stand for,
+// which then shows as 氵 [水] in the header). Deliberately a
 // sibling of ClickableHanziWord rather than sharing its state — same popup
 // placement and document capture-phase dismissal (see that component for why
 // a portalled overlay doesn't work here), but its own marker attribute so
@@ -1573,19 +1582,15 @@ function ComponentsLine({ components }: { components: string }) {
     return () => document.removeEventListener("click", handleOutsideClick, true);
   }, [shownIndex]);
 
-  function infoFor(p: Extract<ComponentPart, { kind: "component" }>) {
-    const entries = lookups[lookupKey(p.char)] ?? [];
-    const fallback = entries.find((e) => !/^[A-Z]/.test(e.pinyin)) ?? entries[0];
-    return {
-      pinyin: pickPinyin(entries, p.meaning),
-      meaning: p.meaning ?? fallback?.meaning.split("/")[0].trim() ?? null,
-    };
+  function entriesFor(p: Extract<ComponentPart, { kind: "component" }>) {
+    return lookups[lookupKey(p.char)] ?? [];
   }
 
   function showAt(i: number, kind: "click" | "hover", e: ReactMouseEvent<HTMLElement>) {
     if (kind === "hover" && openIndex !== null) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    setPopupPos(popupPlacement(rect, 112));
+    // 140 = half of WordInfoPopup's w-64 (256px) plus a little slack.
+    setPopupPos(popupPlacement(rect, 140));
     if (kind === "hover") {
       setHoverIndex(i);
     } else if (openIndex === i) {
@@ -1600,14 +1605,12 @@ function ComponentsLine({ components }: { components: string }) {
 
   const shown = shownIndex !== null ? parts[shownIndex] : undefined;
   const shownComponent = shown?.kind === "component" ? shown : null;
-  const shownInfo = shownComponent ? infoFor(shownComponent) : null;
 
   return (
     <span>
       {parts.map((p, i) => {
         if (p.kind === "text") return <span key={i}>{p.text}</span>;
-        const { pinyin, meaning } = infoFor(p);
-        if (!pinyin && !meaning) return <span key={i}>{p.raw}</span>;
+        if (!p.meaning && entriesFor(p).length === 0) return <span key={i}>{p.raw}</span>;
         return (
           <span
             key={i}
@@ -1627,7 +1630,6 @@ function ComponentsLine({ components }: { components: string }) {
         );
       })}
       {shownComponent &&
-        shownInfo &&
         popupPos &&
         typeof document !== "undefined" &&
         createPortal(
@@ -1636,10 +1638,9 @@ function ComponentsLine({ components }: { components: string }) {
             className="fixed z-50 -translate-x-1/2 animate-dropdown-in"
             style={{ top: popupPos.top, left: popupPos.left }}
           >
-            <ComponentInfoPopup
-              char={shownComponent.char}
-              pinyin={shownInfo.pinyin}
-              meaning={shownInfo.meaning}
+            <WordInfoPopup
+              segment={{ word: shownComponent.char, entries: entriesFor(shownComponent) }}
+              note={shownComponent.meaning}
               maxHeight={popupPos.maxHeight}
             />
           </div>,
