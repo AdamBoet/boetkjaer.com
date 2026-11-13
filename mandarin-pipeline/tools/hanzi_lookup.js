@@ -48,6 +48,20 @@ function resolveMeaning(component) {
 
   const defs = hanzi.definitionLookup(component);
   if (defs && defs.length > 0) {
+    // The first entry/sense can be a bare cross-reference — 令's first entry
+    // is the proper-noun Ling2 "see 令狐[Ling2 hu2]", its ling2 entry is all
+    // cross-refs and ling3 is a niche classifier, while the real "to order"
+    // sits in ling4. Pick the entry with the most real (non-cross-ref)
+    // senses — the main reading almost always has the longest list —
+    // preferring lowercase pinyin over capitalised proper-noun entries.
+    let best = null;
+    for (const d of defs) {
+      const senses = d.definition.split('/').map((s) => s.trim()).filter((s) => s && !CROSS_REF_RE.test(s));
+      if (senses.length === 0) continue;
+      const score = senses.length + (/^[A-Z]/.test(d.pinyin) ? 0 : 1000);
+      if (!best || score > best.score) best = { score, sense: senses[0] };
+    }
+    if (best) return best.sense;
     return defs[0].definition.split('/')[0];
   }
 
