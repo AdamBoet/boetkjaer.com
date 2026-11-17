@@ -641,6 +641,18 @@ def _is_rare_definition(definition: str) -> bool:
     return any(_is_rare_sense(sense) for sense in definition.split("/"))
 
 
+# Known CC-CEDICT pinyin errors in example words. A wrong reading files the
+# word under the wrong reading group — 文化圈 is listed as "wen2 hua4 juan4",
+# which put "cultural camp" next to 圈's juàn (animal pen).
+_WORD_PINYIN_FIXES = {
+    "文化圈": "wen2 hua4 quan1",
+}
+
+# Shown in place of a reading's word group when that reading has no example
+# words, so daily_words keeps one " / " group per reading.
+_NO_WORDS_PLACEHOLDER = "—"
+
+
 def pick_example_words(character: str, count: int = 3, pronunciation: str = "") -> list[list[tuple[str, str]]]:
     """No generative AI here — real, frequency-tiered example words (with
     their dictionary definitions) from the same `hanzi` npm data
@@ -774,7 +786,8 @@ def pick_example_words(character: str, count: int = 3, pronunciation: str = "") 
             meaning = first_clean_sense(item["definition"], item["pinyin"])
             if meaning is None:
                 continue
-            result.append((item["simplified"], meaning, item["pinyin"]))
+            pinyin = _WORD_PINYIN_FIXES.get(item["simplified"], item["pinyin"])
+            result.append((item["simplified"], meaning, pinyin))
         return result
 
     def char_reading(word: str, word_pinyin: str) -> str | None:
@@ -878,15 +891,25 @@ def pick_example_words(character: str, count: int = 3, pronunciation: str = "") 
         return groups
 
     groups = collect_grouped()
-    # An empty group is dropped rather than shown, which also drops its " / "
-    # separator — daily_words then no longer lines up with the card's
-    # readings (e.g. 盛's cheng2 had no compound at all, so all three slots
-    # went to sheng4). Usually means the reading is rare enough to prune from
-    # `pronunciation`; flag it so that doesn't go unnoticed again.
+    # An empty group is kept (rendered as a placeholder by the callers), not
+    # dropped — dropping it also dropped its " / " separator, so daily_words
+    # stopped lining up with the card's readings (圈: three readings, two
+    # word groups, each shown next to the wrong reading). Usually means the
+    # reading is rare enough to prune from `pronunciation`; flag it.
     for r in readings:
         if not groups[r]:
             print(f"  WARNING {character}: no example words for reading {r} — consider dropping it from pronunciation")
-    return [groups[r] for r in readings if groups[r]]
+    return [groups[r] for r in readings]
+
+
+def format_daily_words(groups: list[list[tuple[str, str]]]) -> str:
+    """"/" between pronunciation groups, "; " between words within one —
+    mirroring the static `examples` field's convention. An empty group keeps
+    its slot as a placeholder so groups stay 1:1 with the readings."""
+    return " / ".join(
+        "; ".join(f"{word} ({meaning})" for word, meaning in group) or _NO_WORDS_PLACEHOLDER
+        for group in groups
+    )
 
 
 def refresh_hanzi(limit=None, settings=None):
@@ -933,11 +956,7 @@ def refresh_hanzi(limit=None, settings=None):
             groups = pick_example_words(char, word_count, pronunciation)
             if not any(groups):
                 raise RuntimeError("no example words available")
-            # Mirrors the static `examples` field's own convention: "/" between
-            # pronunciation groups, "; " between words within the same one.
-            daily_words = " / ".join(
-                "; ".join(f"{word} ({meaning})" for word, meaning in group) for group in groups
-            )
+            daily_words = format_daily_words(groups)
             all_words = [w for group in groups for w, _ in group]
             sb_update_by("hanzi_cards", "note_id", note_id, {
                 "daily_words": daily_words,
@@ -1156,7 +1175,7 @@ def replenish_hanzi_new_cards(limit=None, settings=None):
             groups = pick_example_words(char, word_count, pronunciation)
             if any(groups):
                 all_words = [w for g in groups for w, _ in g]
-                row["daily_words"] = " / ".join("; ".join(f"{w} ({m})" for w, m in g) for g in groups)
+                row["daily_words"] = format_daily_words(groups)
                 row["daily_words_audio_url"] = generate_word_list_audio(all_words, "hanzi-words", str(note_id), voice)
                 row["daily_words_generated_at"] = datetime.now(timezone.utc).isoformat()
 
@@ -1713,7 +1732,26 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--notify", action="store_true", help="send a push notification with the results")
+    parser.add_argument(
+        "--words-only", action="store_true",
+        help="only regenerate hanzi daily_words (run after the authoring review routine)",
+    )
     args = parser.parse_args()
+
+    # The main run creates new hanzi cards before the "Hanzi card authoring
+    # review" routine (03:30 UTC) reorders/prunes their readings, so a new
+    # card's daily_words were grouped for the draft reading order and stayed
+    # misaligned until the next night (圈: words grouped juān/juàn/quān, shown
+    # under quān/juàn/juān). A second launchd job
+    # (com.adam.hanzi-words-resync) runs this mode after the routine;
+    # refresh_hanzi's pronunciation_rechecked_since_words picks up exactly
+    # the cards it changed. No heartbeat row or notification — that's the
+    # main run's job.
+    if args.words_only:
+        ok, failed, _ = refresh_hanzi(args.limit, load_settings())
+        sweep_orphaned_audio()
+        print(f"words-only: {ok} updated, {failed} failed.")
+        return
 
     # Each step used to run unguarded in one big try/except BaseException —
     # a step-level crash (e.g. sb_request exhausting its retries) aborted
