@@ -9,6 +9,7 @@ const nav = [
   { href: "/lab", label: "Overview", icon: "⊞" },
   { href: "/lab/hanzi", label: "Mandarin", icon: "字" },
   { href: "/lab/economy", label: "Economy", icon: "$" },
+  { href: "/lab/weight", label: "Weight", icon: "⚖\uFE0E" },
 ];
 
 function MenuIcon({ open }: { open: boolean }) {
