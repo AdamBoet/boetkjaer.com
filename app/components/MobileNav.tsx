@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import ThemeToggle from "./ThemeToggle";
+import SettingsButton from "./Settings";
 
 const nav = [
   { href: "/lab", label: "Overview", icon: "⊞" },
@@ -85,17 +85,8 @@ export default function MobileNav() {
               );
             })}
 
-            <div className="mt-1 pt-1 border-t border-zinc-100 dark:border-zinc-800 flex items-center gap-2">
-              <form action="/api/lab-logout" method="POST" className="flex-1">
-                <button
-                  type="submit"
-                  className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  <span className="text-base w-5 text-center">⏻</span>
-                  Logout
-                </button>
-              </form>
-              <ThemeToggle />
+            <div className="mt-1 pt-1 border-t border-zinc-100 dark:border-zinc-800">
+              <SettingsButton className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" />
             </div>
           </div>
         </>

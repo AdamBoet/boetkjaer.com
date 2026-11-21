@@ -50,3 +50,24 @@ grant select, insert, update, delete on habits to service_role;
 -- ---------------------------------------------------------------------------
 alter table push_subscriptions add column if not exists app text not null default 'mandarin'
   check (app in ('general', 'mandarin'));
+
+-- ---------------------------------------------------------------------------
+-- Fixed-time daily reminders (Copenhagen wall time), sent by
+-- /api/habit-tick. 'weight' is edited from the Weight page's "…" menu.
+-- ---------------------------------------------------------------------------
+create table if not exists daily_reminders (
+  id text primary key,
+  title text not null,
+  url text not null,
+  at_time time not null,
+  enabled boolean not null default true,
+  updated_at timestamptz not null default now()
+);
+
+alter table daily_reminders enable row level security;
+revoke all on daily_reminders from anon, authenticated;
+grant select, insert, update, delete on daily_reminders to service_role;
+
+insert into daily_reminders (id, title, url, at_time)
+values ('weight', '⚖︎ Remember to track your weight', '/lab/weight', '06:00')
+on conflict (id) do nothing;

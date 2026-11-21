@@ -16,9 +16,16 @@ export const maxDuration = 30;
 // during CET, 6am during CEST (Vercel crons are fixed UTC, no DST).
 const MANDARIN = { app: "mandarin" } as const;
 const STUCK_HOURS = 3;
+
+// Settings → Notifications → "Missed or stuck runs". Defaults to on.
+async function watchdogEnabled() {
+  const { data } = await supabaseAdmin.from("notification_toggles").select("enabled").eq("id", "mandarin_watchdog").maybeSingle();
+  return data?.enabled ?? true;
+}
 const STALE_HOURS = 20;
 
 async function checkHeartbeat() {
+  if (!(await watchdogEnabled())) return "disabled";
   const { data: rows, error } = await supabaseAdmin
     .from("pipeline_runs")
     .select("id, started_at, status")

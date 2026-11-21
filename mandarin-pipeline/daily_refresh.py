@@ -1631,8 +1631,23 @@ def process_screenshot_queue(limit=None, settings=None):
 
 # --- Push notification (Web Push, for the iOS PWA) -------------------
 
+def notification_enabled(toggle_id: str) -> bool:
+    """On/off switch from the lab's Settings → Notifications
+    (notification_toggles table). Defaults to on if it can't be read."""
+    try:
+        rows = sb_select("notification_toggles", f"select=enabled&id=eq.{toggle_id}")
+        return bool(rows[0]["enabled"]) if rows else True
+    except Exception as e:
+        print(f"  (couldn't read notification setting, sending anyway: {e})")
+        return True
+
+
 def send_notification(title: str, body: str):
     from pywebpush import webpush, WebPushException
+
+    if not notification_enabled("mandarin_nightly"):
+        print("  (skipping notification — turned off in Settings)")
+        return
 
     vapid_private = ENV.get("VAPID_PRIVATE_KEY")
     vapid_subject = ENV.get("VAPID_SUBJECT")

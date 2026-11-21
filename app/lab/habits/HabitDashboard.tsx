@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { type HabitRow } from "@/lib/habits";
 import { enablePush, isStandalone, pushSupported } from "@/lib/push-client";
+import { HABITS_CHANGED_EVENT } from "../../components/Settings";
 
 type Unit = "min" | "h" | "d";
 const UNIT_MINUTES: Record<Unit, number> = { min: 1, h: 60, d: 1440 };
@@ -36,12 +37,6 @@ type EditState = {
   quietEnd: string;
 };
 
-function formatNext(iso: string) {
-  const d = new Date(iso);
-  const sameDay = d.toDateString() === new Date().toDateString();
-  return d.toLocaleString("en-GB", sameDay ? { hour: "2-digit", minute: "2-digit" } : { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-}
-
 export default function HabitDashboard({ initialHabits, loadError }: { initialHabits: HabitRow[]; loadError: string | null }) {
   const [habits, setHabits] = useState(initialHabits);
   const [error, setError] = useState<string | null>(loadError);
@@ -70,7 +65,11 @@ export default function HabitDashboard({ initialHabits, loadError }: { initialHa
 
   useEffect(() => {
     window.addEventListener("focus", reload);
-    return () => window.removeEventListener("focus", reload);
+    window.addEventListener(HABITS_CHANGED_EVENT, reload);
+    return () => {
+      window.removeEventListener("focus", reload);
+      window.removeEventListener(HABITS_CHANGED_EVENT, reload);
+    };
   }, [reload]);
 
   // In the home-screen app, the first tap on Add or Send test asks iOS for
@@ -110,21 +109,6 @@ export default function HabitDashboard({ initialHabits, loadError }: { initialHa
     } finally {
       setSaving(false);
     }
-  }
-
-  async function toggleActive(habit: HabitRow) {
-    const res = await fetch(`/api/habits/${habit.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ active: !habit.active }),
-    });
-    const json = await res.json();
-    if (!res.ok) {
-      setError(json.error ?? "Failed to update");
-      if (res.status === 404) reload();
-      return;
-    }
-    setHabits(prev => prev.map(h => (h.id === habit.id ? json.habit : h)));
   }
 
   async function deleteHabit(id: number) {
@@ -274,26 +258,9 @@ export default function HabitDashboard({ initialHabits, loadError }: { initialHa
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
                 {formatInterval(h.interval_minutes)}
                 {h.quiet_start && h.quiet_end && ` · quiet ${h.quiet_start.slice(0, 5)}–${h.quiet_end.slice(0, 5)}`}
-                {h.active ? ` · next ${formatNext(h.next_due_at)}` : " · notifications off"}
+                {!h.active && " · notifications off"}
               </p>
             </div>
-            <button
-              role="switch"
-              aria-checked={h.active}
-              aria-label={`Notifications for ${h.name}`}
-              title={h.active ? "Notifications on" : "Notifications off"}
-              onClick={() => toggleActive(h)}
-              className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={h.active ? "text-zinc-700 dark:text-zinc-200" : "text-zinc-400 dark:text-zinc-500"}>
-                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-                <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-                {!h.active && <line x1="3" y1="3" x2="21" y2="21" />}
-              </svg>
-              <span className={`relative inline-block h-5 w-9 rounded-full transition-colors ${h.active ? "bg-blue-900 dark:bg-blue-600" : "bg-zinc-300 dark:bg-zinc-700"}`}>
-                <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${h.active ? "translate-x-4" : ""}`} />
-              </span>
-            </button>
             <button onClick={() => startEdit(h)} className={smallBtn}>
               Edit
             </button>

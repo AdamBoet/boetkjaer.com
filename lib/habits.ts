@@ -99,6 +99,16 @@ export function parseQuiet(start: unknown, end: unknown): Parsed<{ quiet_start: 
   return { ok: true, value: { quiet_start: s.slice(0, 5), quiet_end: e.slice(0, 5) } };
 }
 
+// Next reminder after `from`, snapped to a clean clock time: whole hours for
+// intervals of an hour or more (17:00, 18:00 — never 17:15), otherwise
+// multiples of the interval within the hour (every 15 min -> :00 :15 :30 :45).
+// Rounds down, so a reminder sent a few seconds after 17:00 is next due at
+// 18:00, not 19:00. Copenhagen is a whole-hour UTC offset, so snapping in UTC
+// gives the same local times.
 export function nextDue(intervalMinutes: number, from = new Date()) {
-  return new Date(from.getTime() + intervalMinutes * 60_000).toISOString();
+  const gridMinutes = intervalMinutes >= 60 ? 60 : 60 % intervalMinutes === 0 ? intervalMinutes : 5;
+  const grid = gridMinutes * 60_000;
+  let at = Math.floor((from.getTime() + intervalMinutes * 60_000) / grid) * grid;
+  if (at <= from.getTime()) at += grid;
+  return new Date(at).toISOString();
 }

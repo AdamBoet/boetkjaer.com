@@ -13,20 +13,22 @@ export const maxDuration = 30;
 // next_due_at forward; a habit that comes due during its quiet hours is
 // pushed back to when they end, without a notification.
 //
-// It also sends fixed daily reminders at a Copenhagen wall-clock time. The
-// cron fires at :00, :05, ..., so exactly one run lands in each reminder's
-// 5-minute window.
-const DAILY_REMINDERS = [{ hour: 6, minute: 0, title: "⚖\uFE0E Remember to track your weight", url: "/lab/weight" }];
-
+// It also sends the enabled fixed-time reminders in daily_reminders (e.g.
+// the Weight page's morning reminder) at their Copenhagen wall-clock time.
+// The cron fires at :00, :05, ..., so exactly one run lands in each
+// reminder's 5-minute window.
 async function sendDailyReminders(now: Date) {
+  const { data, error } = await supabaseAdmin.from("daily_reminders").select("id, title, url, at_time").eq("enabled", true);
+  if (error) throw new Error(error.message);
   const p = localParts(now);
   const t = p.h * 60 + p.mi;
   const sent: string[] = [];
-  for (const r of DAILY_REMINDERS) {
-    const at = r.hour * 60 + r.minute;
+  for (const r of data ?? []) {
+    const [h, m] = r.at_time.split(":").map(Number);
+    const at = h * 60 + m;
     if (t >= at && t < at + 5) {
       await sendPushToAll(r.title, "", { url: r.url, app: "general" });
-      sent.push(r.url);
+      sent.push(r.id);
     }
   }
   return sent;
