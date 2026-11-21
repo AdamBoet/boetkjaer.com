@@ -10,6 +10,7 @@ const nav = [
   { href: "/lab/hanzi", label: "Mandarin", icon: "字" },
   { href: "/lab/economy", label: "Economy", icon: "$" },
   { href: "/lab/weight", label: "Weight", icon: "⚖\uFE0E" },
+  { href: "/lab/habits", label: "Habits", icon: "✓" },
 ];
 
 export default function Sidebar() {

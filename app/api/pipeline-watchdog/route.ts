@@ -14,6 +14,7 @@ export const maxDuration = 30;
 // pushes a notification if the most recent run is missing or stuck.
 // Triggered by a Vercel Cron (see vercel.json) at 04:00 UTC — 5am local
 // during CET, 6am during CEST (Vercel crons are fixed UTC, no DST).
+const MANDARIN = { app: "mandarin" } as const;
 const STUCK_HOURS = 3;
 const STALE_HOURS = 20;
 
@@ -27,7 +28,7 @@ async function checkHeartbeat() {
 
   const last = rows?.[0];
   if (!last) {
-    await sendPushToAll("Nightly refresh missing", "No refresh run has ever been recorded.");
+    await sendPushToAll("Nightly refresh missing", "No refresh run has ever been recorded.", MANDARIN);
     return "no_run_ever";
   }
 
@@ -36,7 +37,8 @@ async function checkHeartbeat() {
   if (last.status === "running" && hoursSinceStart > STUCK_HOURS) {
     await sendPushToAll(
       "Nightly refresh stuck",
-      `Last run started ${Math.round(hoursSinceStart)}h ago and never finished — check the Mac.`
+      `Last run started ${Math.round(hoursSinceStart)}h ago and never finished — check the Mac.`,
+      MANDARIN
     );
     return "stuck";
   }
@@ -44,7 +46,8 @@ async function checkHeartbeat() {
   if (hoursSinceStart > STALE_HOURS) {
     await sendPushToAll(
       "Nightly refresh missed",
-      "No refresh has started today — the Mac may have been off, asleep, or lost network around 4am."
+      "No refresh has started today — the Mac may have been off, asleep, or lost network around 4am.",
+      MANDARIN
     );
     return "missed";
   }

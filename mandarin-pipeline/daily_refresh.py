@@ -1640,7 +1640,7 @@ def send_notification(title: str, body: str):
         print("  (skipping notification — VAPID keys not set in .env)")
         return
 
-    subs = sb_select("push_subscriptions", "select=endpoint,p256dh,auth")
+    subs = sb_select("push_subscriptions", "select=endpoint,p256dh,auth&app=eq.mandarin")
     for sub in subs:
         try:
             webpush(

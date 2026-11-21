@@ -11,18 +11,12 @@ import StatsTab from "./StatsTab";
 import TextTab from "./TextTab";
 import SongsTab from "./SongsTab";
 import { useReviewing } from "../../components/ReviewingContext";
+import { enablePush, pushSupported } from "@/lib/push-client";
 
 const YEARLY_GOAL = 1500;
 const CARDS_PER_DAY = 5;
 
 const NOTIFICATION_PROMPT_SEEN_KEY = "hanziNotificationPromptSeen";
-
-function urlBase64ToUint8Array(base64: string): Uint8Array {
-  const padding = "=".repeat((4 - (base64.length % 4)) % 4);
-  const base64Safe = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const raw = atob(base64Safe);
-  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
-}
 
 // Asked once, the first time the app is opened on a device, rather than
 // buried as a settings toggle — lets the daily sentence-refresh cron (runs
@@ -33,7 +27,7 @@ function NotificationPrompt() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    if (!pushSupported()) return;
     if (!window.matchMedia("(max-width: 767px)").matches) return; // mobile only, not desktop
     if (localStorage.getItem(NOTIFICATION_PROMPT_SEEN_KEY)) return;
     if (Notification.permission !== "default") return;
@@ -48,21 +42,7 @@ function NotificationPrompt() {
   async function enable() {
     setBusy(true);
     try {
-      const reg = await navigator.serviceWorker.register("/sw.js");
-      const permission = await Notification.requestPermission();
-      if (permission === "granted") {
-        const key = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-        if (!key) throw new Error("Missing NEXT_PUBLIC_VAPID_PUBLIC_KEY");
-        const sub = await reg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(key) as BufferSource,
-        });
-        await fetch("/api/push-subscribe", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(sub),
-        });
-      }
+      await enablePush();
     } catch {
       // Ignore — worst case the user just doesn't get notifications.
     }

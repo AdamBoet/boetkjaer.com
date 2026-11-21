@@ -4,11 +4,12 @@ self.addEventListener("push", (event) => {
     self.registration.showNotification(data.title || "Hanzi", {
       body: data.body || "",
       icon: "/icon.png",
+      data: { url: data.url },
     })
   );
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  event.waitUntil(clients.openWindow("/lab/hanzi"));
+  event.waitUntil(clients.openWindow(event.notification.data?.url || "/lab/hanzi"));
 });

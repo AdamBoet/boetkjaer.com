@@ -2,18 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-server";
 
 // Stores/removes Web Push subscriptions so the local sentence-refresh
-// script (daily_refresh.py) can notify an installed iOS PWA when it's done.
+// script (daily_refresh.py) can notify an installed iOS PWA when it's done,
+// and Habit Helper can send reminders. `app` says which home-screen app the
+// subscription came from: "general" (Bøtkjær Labs) or "mandarin" (暴实验室).
 export async function POST(req: NextRequest) {
   const sub = await req.json();
   if (!sub?.endpoint || !sub?.keys?.p256dh || !sub?.keys?.auth) {
     return NextResponse.json({ error: "Invalid subscription" }, { status: 400 });
   }
 
+  const app = sub.app === "general" ? "general" : "mandarin";
+
   const { error } = await supabaseAdmin.from("push_subscriptions").upsert(
     {
       endpoint: sub.endpoint,
       p256dh: sub.keys.p256dh,
       auth: sub.keys.auth,
+      app,
     },
     { onConflict: "endpoint" }
   );
