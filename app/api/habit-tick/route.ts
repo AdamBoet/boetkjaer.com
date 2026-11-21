@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-server";
 import { sendPushToAll } from "@/lib/push";
-import { inQuietHours, nextDue, quietEndAfter, type HabitRow } from "@/lib/habits";
+import { inQuietHours, localParts, nextDue, quietEndAfter, type HabitRow } from "@/lib/habits";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -12,6 +12,26 @@ export const maxDuration = 30;
 // secret header instead. Sends one push per due habit and moves its
 // next_due_at forward; a habit that comes due during its quiet hours is
 // pushed back to when they end, without a notification.
+//
+// It also sends fixed daily reminders at a Copenhagen wall-clock time. The
+// cron fires at :00, :05, ..., so exactly one run lands in each reminder's
+// 5-minute window.
+const DAILY_REMINDERS = [{ hour: 6, minute: 0, title: "⚖\uFE0E Remember to track your weight", url: "/lab/weight" }];
+
+async function sendDailyReminders(now: Date) {
+  const p = localParts(now);
+  const t = p.h * 60 + p.mi;
+  const sent: string[] = [];
+  for (const r of DAILY_REMINDERS) {
+    const at = r.hour * 60 + r.minute;
+    if (t >= at && t < at + 5) {
+      await sendPushToAll(r.title, "", { url: r.url, app: "general" });
+      sent.push(r.url);
+    }
+  }
+  return sent;
+}
+
 export async function POST(req: NextRequest) {
   const secret = process.env.HABIT_TICK_SECRET;
   if (!secret || req.headers.get("x-habit-tick-secret") !== secret) {
@@ -35,11 +55,13 @@ export async function POST(req: NextRequest) {
     }
     // Advance first, so a push failure can't make the habit fire on every tick.
     await supabaseAdmin.from("habits").update({ next_due_at: nextDue(habit.interval_minutes, now) }).eq("id", habit.id);
-    await sendPushToAll(`⏰ ${habit.name}`, "Time for your habit", { url: "/lab/habits", app: "general" });
+    await sendPushToAll(`⏰ ${habit.name}`, "", { url: "/lab/habits", app: "general" });
     results.push({ id: habit.id, action: "sent" });
   }
 
-  return NextResponse.json({ ok: true, results });
+  const daily = await sendDailyReminders(now);
+
+  return NextResponse.json({ ok: true, results, daily });
 }
 
 export const GET = POST;

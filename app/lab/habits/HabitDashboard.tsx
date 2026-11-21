@@ -19,6 +19,23 @@ function formatInterval(minutes: number) {
   return `every ${minutes} min`;
 }
 
+// 120 -> { amount: "2", unit: "h" }, for prefilling the edit form.
+function splitInterval(minutes: number): { amount: string; unit: Unit } {
+  if (minutes % 1440 === 0) return { amount: String(minutes / 1440), unit: "d" };
+  if (minutes % 60 === 0) return { amount: String(minutes / 60), unit: "h" };
+  return { amount: String(minutes), unit: "min" };
+}
+
+type EditState = {
+  habit: HabitRow;
+  name: string;
+  amount: string;
+  unit: Unit;
+  useQuiet: boolean;
+  quietStart: string;
+  quietEnd: string;
+};
+
 function formatNext(iso: string) {
   const d = new Date(iso);
   const sameDay = d.toDateString() === new Date().toDateString();
@@ -38,6 +55,9 @@ export default function HabitDashboard({ initialHabits, loadError }: { initialHa
   const [confirmDelete, setConfirmDelete] = useState<HabitRow | null>(null);
   const [testing, setTesting] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [editing, setEditing] = useState<EditState | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -53,7 +73,7 @@ export default function HabitDashboard({ initialHabits, loadError }: { initialHa
     return () => window.removeEventListener("focus", reload);
   }, [reload]);
 
-  // In the home-screen app, the first tap on Add or Test asks iOS for
+  // In the home-screen app, the first tap on Add or Send test asks iOS for
   // notification permission (it only allows asking from a tap).
   async function askForNotificationsOnce() {
     if (!pushSupported() || !isStandalone() || Notification.permission !== "default") return;
@@ -118,6 +138,65 @@ export default function HabitDashboard({ initialHabits, loadError }: { initialHa
     }
   }
 
+  useEffect(() => {
+    if (!editing && !confirmDelete) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (confirmDelete) setConfirmDelete(null);
+      else setEditing(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editing, confirmDelete]);
+
+  function startEdit(habit: HabitRow) {
+    setEditError(null);
+    setNotice(null);
+    setEditing({
+      habit,
+      name: habit.name,
+      ...splitInterval(habit.interval_minutes),
+      useQuiet: !!habit.quiet_start,
+      quietStart: habit.quiet_start?.slice(0, 5) ?? "22:00",
+      quietEnd: habit.quiet_end?.slice(0, 5) ?? "08:00",
+    });
+  }
+
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editing) return;
+    const interval = Math.round(Number(editing.amount.replace(",", ".")) * UNIT_MINUTES[editing.unit]);
+    const body: Record<string, unknown> = {
+      name: editing.name,
+      quiet_start: editing.useQuiet ? editing.quietStart : "",
+      quiet_end: editing.useQuiet ? editing.quietEnd : "",
+    };
+    // Only send the interval when it changed: a new interval restarts the countdown.
+    if (interval !== editing.habit.interval_minutes) body.interval_minutes = interval;
+    setEditSaving(true);
+    setEditError(null);
+    try {
+      const res = await fetch(`/api/habits/${editing.habit.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (res.status === 404) {
+        setEditing(null);
+        reload();
+        return;
+      }
+      if (!res.ok) throw new Error(json.error ?? "Failed to save");
+      setHabits(prev => prev.map(h => (h.id === json.habit.id ? json.habit : h)));
+      setEditing(null);
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
   async function testHabit(id: number) {
     setTesting(id);
     setNotice(null);
@@ -128,7 +207,7 @@ export default function HabitDashboard({ initialHabits, loadError }: { initialHa
       if (!res.ok) throw new Error(json.error ?? "Test failed");
       setNotice(json.sent ? `Sent to ${json.sent} device${json.sent === 1 ? "" : "s"}` : "No phone gets habit notifications yet. Open Habits in the Bøtkjær Labs home-screen app and tap Test there.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Test failed");
+      setEditError(err instanceof Error ? err.message : "Test failed");
     } finally {
       setTesting(null);
     }
@@ -189,20 +268,34 @@ export default function HabitDashboard({ initialHabits, loadError }: { initialHa
       <div className={`${card} divide-y divide-zinc-100 dark:divide-zinc-800`}>
         {habits.length === 0 && <p className="p-6 text-sm text-zinc-400 dark:text-zinc-500 text-center">No habits yet.</p>}
         {habits.map(h => (
-          <div key={h.id} className={`p-4 flex items-center gap-3 ${h.active ? "" : "opacity-50"}`}>
+          <div key={h.id} className="p-4 flex items-center gap-3">
             <div className="min-w-0 flex-1">
-              <p className="font-medium truncate">{h.name}</p>
+              <p className={`font-medium truncate ${h.active ? "" : "text-zinc-400 dark:text-zinc-500"}`}>{h.name}</p>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
                 {formatInterval(h.interval_minutes)}
                 {h.quiet_start && h.quiet_end && ` · quiet ${h.quiet_start.slice(0, 5)}–${h.quiet_end.slice(0, 5)}`}
-                {h.active ? ` · next ${formatNext(h.next_due_at)}` : " · paused"}
+                {h.active ? ` · next ${formatNext(h.next_due_at)}` : " · notifications off"}
               </p>
             </div>
-            <button onClick={() => testHabit(h.id)} disabled={testing === h.id} className={smallBtn}>
-              {testing === h.id ? "…" : "Test"}
+            <button
+              role="switch"
+              aria-checked={h.active}
+              aria-label={`Notifications for ${h.name}`}
+              title={h.active ? "Notifications on" : "Notifications off"}
+              onClick={() => toggleActive(h)}
+              className="flex items-center gap-2 rounded-lg px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={h.active ? "text-zinc-700 dark:text-zinc-200" : "text-zinc-400 dark:text-zinc-500"}>
+                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+                <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+                {!h.active && <line x1="3" y1="3" x2="21" y2="21" />}
+              </svg>
+              <span className={`relative inline-block h-5 w-9 rounded-full transition-colors ${h.active ? "bg-blue-900 dark:bg-blue-600" : "bg-zinc-300 dark:bg-zinc-700"}`}>
+                <span className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${h.active ? "translate-x-4" : ""}`} />
+              </span>
             </button>
-            <button onClick={() => toggleActive(h)} className={smallBtn}>
-              {h.active ? "Pause" : "Resume"}
+            <button onClick={() => startEdit(h)} className={smallBtn}>
+              Edit
             </button>
             <button onClick={() => setConfirmDelete(h)} className={`${smallBtn} hover:!text-red-500`}>
               Delete
@@ -210,7 +303,78 @@ export default function HabitDashboard({ initialHabits, loadError }: { initialHa
           </div>
         ))}
       </div>
-      {notice && <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center">{notice}</p>}
+
+      {editing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setEditing(null)} />
+          <form
+            onSubmit={saveEdit}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Edit ${editing.habit.name}`}
+            className={`${card} relative w-full max-w-md p-5 space-y-4 shadow-xl`}
+          >
+            <h2 className="text-base font-semibold">Edit habit</h2>
+            <input
+              value={editing.name}
+              onChange={e => setEditing({ ...editing, name: e.target.value })}
+              maxLength={100}
+              className={`${input} w-full`}
+            />
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-zinc-500 dark:text-zinc-400">Remind me every</span>
+              <input
+                value={editing.amount}
+                onChange={e => setEditing({ ...editing, amount: e.target.value.replace(/[^0-9.,]/g, "") })}
+                inputMode="decimal"
+                className={`${input} w-16 text-center tabular-nums`}
+              />
+              <select value={editing.unit} onChange={e => setEditing({ ...editing, unit: e.target.value as Unit })} className={input}>
+                <option value="min">minutes</option>
+                <option value="h">hours</option>
+                <option value="d">days</option>
+              </select>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <label className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
+                <input type="checkbox" checked={editing.useQuiet} onChange={e => setEditing({ ...editing, useQuiet: e.target.checked })} />
+                Quiet hours
+              </label>
+              {editing.useQuiet && (
+                <>
+                  <input type="time" value={editing.quietStart} onChange={e => setEditing({ ...editing, quietStart: e.target.value })} className={input} />
+                  <span className="text-zinc-400">to</span>
+                  <input type="time" value={editing.quietEnd} onChange={e => setEditing({ ...editing, quietEnd: e.target.value })} className={input} />
+                </>
+              )}
+            </div>
+            {editError && <p className="text-sm text-red-500 dark:text-red-400">{editError}</p>}
+            {notice && <p className="text-sm text-zinc-500 dark:text-zinc-400">{notice}</p>}
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => testHabit(editing.habit.id)}
+                disabled={testing === editing.habit.id}
+                className={`${smallBtn} border border-zinc-200 dark:border-zinc-700`}
+              >
+                {testing === editing.habit.id ? "Sending…" : "Send test notification"}
+              </button>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setEditing(null)} className={smallBtn}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editSaving || !editing.name.trim() || !editing.amount}
+                  className="rounded-lg bg-blue-900 hover:bg-blue-800 dark:bg-blue-700 dark:hover:bg-blue-600 text-white px-4 py-1.5 text-sm font-medium disabled:opacity-40"
+                >
+                  {editSaving ? "Saving…" : "Save"}
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
 
       {confirmDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

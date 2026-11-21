@@ -24,7 +24,7 @@ function toMinutes(t: string) {
 }
 
 // Wall-clock parts of `date` in Copenhagen.
-function localParts(date: Date) {
+export function localParts(date: Date) {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat("en-GB", {
       timeZone: HABIT_TZ,
