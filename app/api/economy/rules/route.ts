@@ -3,7 +3,8 @@ import { supabaseAdmin } from "@/lib/supabase-server";
 import { UNCATEGORIZED } from "@/lib/bank-sync";
 
 // "Always use this category for <merchant>": saves the rule and applies it
-// to that merchant's existing uncategorised bank transactions.
+// to existing uncategorised bank transactions whose merchant contains it
+// (same matching as lib/bank-sync.ts).
 export async function POST(req: NextRequest) {
   const { merchant, category } = await req.json();
   if (typeof merchant !== "string" || !merchant.trim() || typeof category !== "string" || !category.trim()) {
@@ -16,7 +17,7 @@ export async function POST(req: NextRequest) {
   const { data: updated, error: updErr } = await supabaseAdmin
     .from("economy_transactions")
     .update({ description: category.trim() })
-    .ilike("merchant", m.replace(/[%_\\]/g, c => `\\${c}`))
+    .ilike("merchant", `%${m.replace(/[%_\\]/g, c => `\\${c}`)}%`)
     .eq("description", UNCATEGORIZED)
     .not("bank_account_id", "is", null)
     .select("*");

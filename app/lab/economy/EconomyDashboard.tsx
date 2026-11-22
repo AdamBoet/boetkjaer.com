@@ -37,16 +37,27 @@ function toneClass(type: EntryType) {
   return type === "expense" ? "text-red-500 dark:text-red-400" : "text-emerald-700 dark:text-emerald-500";
 }
 
+// One fixed colour per category (assigned in alphabetical order, see
+// categoryColor), so a category keeps its colour in every month.
 const CATEGORY_COLOR_CLASSES = [
   "text-[#2a78d6] dark:text-[#3987e5]",
   "text-[#1baf7a] dark:text-[#199e70]",
   "text-[#eda100] dark:text-[#c98500]",
-  "text-[#008300] dark:text-[#008300]",
+  "text-[#008300] dark:text-[#2fa52f]",
   "text-[#4a3aa7] dark:text-[#9085e9]",
   "text-[#e34948] dark:text-[#e66767]",
+  "text-[#d6409f] dark:text-[#e36bb6]",
+  "text-[#0f9bb5] dark:text-[#2bb6cf]",
+  "text-[#9a6324] dark:text-[#c08a4b]",
+  "text-[#7f8c1a] dark:text-[#a8b83a]",
 ];
+// Never get their own slice colour: grouped into the grey "Other" slice.
+const GREY_CATEGORIES = new Set(["Other", "Uncategorized"]);
 const OTHER_COLOR_CLASS = "text-zinc-400 dark:text-zinc-500";
 const MAX_DONUT_SLICES = 6;
+// Kept out of earnings/spending and the donut (still listed). Business's
+// leftover counts toward Net; transfers between own accounts don't count at all.
+const EXCLUDED_CATEGORIES = new Set(["Business", "Transfer"]);
 
 type DonutSegment = { name: string; value: number; pct: number; colorClass: string };
 
@@ -67,7 +78,7 @@ function CategoryDonut({ segments, centerLabel }: { segments: DonutSegment[]; ce
   let cumulative = 0;
 
   return (
-    <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4">
+    <div className="flex flex-1 flex-col sm:flex-row items-center justify-center gap-6">
       <div className="relative w-32 h-32 shrink-0">
         <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
           {segments.map(seg => {
@@ -98,7 +109,7 @@ function CategoryDonut({ segments, centerLabel }: { segments: DonutSegment[]; ce
           <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">{centerLabel}</span>
         </div>
       </div>
-      <div className="w-full sm:w-80 sm:shrink-0 space-y-1.5">
+      <div className="w-full max-w-xs sm:w-72 sm:shrink-0 space-y-1.5">
         {segments.map(seg => (
           <div key={seg.name} className="flex items-center gap-2 text-xs">
             <span className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 bg-current ${seg.colorClass}`} />
@@ -202,13 +213,6 @@ export default function EconomyDashboard({
     return () => clearTimeout(t);
   }, [error]);
 
-  const [txCategory, setTxCategory] = useState(
-    initialCategories.find(c => c.name === "Groceries")?.name ?? initialCategories[0]?.name ?? ""
-  );
-  const [txAmount, setTxAmount] = useState("");
-  const [txType, setTxType] = useState<EntryType>("expense");
-  const [txSubmitting, setTxSubmitting] = useState(false);
-
   const [editingTxId, setEditingTxId] = useState<number | null>(null);
   const [editTxCategory, setEditTxCategory] = useState("");
   const [editTxAmount, setEditTxAmount] = useState("");
@@ -216,12 +220,6 @@ export default function EconomyDashboard({
   const [editTxType, setEditTxType] = useState<EntryType>("expense");
   const [editTxSubmitting, setEditTxSubmitting] = useState(false);
   const [editTxRule, setEditTxRule] = useState(false);
-
-  useEffect(() => {
-    if (!txCategory && categories.length > 0) {
-      setTxCategory(categories[0].name);
-    }
-  }, [categories]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [recName, setRecName] = useState("");
   const [recAmount, setRecAmount] = useState("");
@@ -268,9 +266,18 @@ export default function EconomyDashboard({
     a.occurred_on === b.occurred_on ? b.id - a.id : b.occurred_on.localeCompare(a.occurred_on)
   );
 
-  const totalSpending = currentMonthTransactions.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
-  const totalEarnings = currentMonthTransactions.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
-  const net = totalEarnings - totalSpending;
+  // Business money passing through the personal account (e.g. a client pays,
+  // a business cost goes out) isn't personal income or spending, so it's
+  // left out of the earnings/spending totals and the donut. Its leftover
+  // (in minus out) did change the account, so it still counts toward Net.
+  const counted = currentMonthTransactions.filter(t => !EXCLUDED_CATEGORIES.has(categoryOf(t)));
+  const excludedNet = currentMonthTransactions
+    .filter(t => categoryOf(t) === "Business")
+    .reduce((s, t) => s + (t.type === "income" ? t.amount : -t.amount), 0);
+
+  const totalSpending = counted.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
+  const totalEarnings = counted.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
+  const net = totalEarnings - totalSpending + excludedNet;
 
   function categoryOf(t: Transaction): string {
     if (t.recurring_item_id != null) {
@@ -281,22 +288,35 @@ export default function EconomyDashboard({
   }
 
   const categoryTotals = new Map<string, number>();
-  currentMonthTransactions
+  counted
     .filter(t => t.type === "expense")
     .forEach(t => {
       const cat = categoryOf(t);
       categoryTotals.set(cat, (categoryTotals.get(cat) ?? 0) + t.amount);
     });
 
-  const sortedCategoryEntries = [...categoryTotals.entries()].sort((a, b) => b[1] - a[1]);
+  const sortedCategoryEntries = [...categoryTotals.entries()]
+    .filter(([name]) => !GREY_CATEGORIES.has(name))
+    .sort((a, b) => b[1] - a[1]);
   const topCategoryEntries = sortedCategoryEntries.slice(0, MAX_DONUT_SLICES);
-  const otherCategoryTotal = sortedCategoryEntries.slice(MAX_DONUT_SLICES).reduce((s, [, v]) => s + v, 0);
+  const otherCategoryTotal =
+    sortedCategoryEntries.slice(MAX_DONUT_SLICES).reduce((s, [, v]) => s + v, 0) +
+    [...GREY_CATEGORIES].reduce((s, n) => s + (categoryTotals.get(n) ?? 0), 0);
 
-  const donutSegments: DonutSegment[] = topCategoryEntries.map(([name, value], i) => ({
+  const colorOrder = categories
+    .map(c => c.name)
+    .filter(n => !GREY_CATEGORIES.has(n) && !EXCLUDED_CATEGORIES.has(n))
+    .sort((a, b) => a.localeCompare(b));
+  function categoryColor(name: string) {
+    const i = colorOrder.indexOf(name);
+    return CATEGORY_COLOR_CLASSES[(i >= 0 ? i : colorOrder.length) % CATEGORY_COLOR_CLASSES.length];
+  }
+
+  const donutSegments: DonutSegment[] = topCategoryEntries.map(([name, value]) => ({
     name,
     value,
     pct: totalSpending > 0 ? Math.round((value / totalSpending) * 100) : 0,
-    colorClass: CATEGORY_COLOR_CLASSES[i],
+    colorClass: categoryColor(name),
   }));
   if (otherCategoryTotal > 0) {
     donutSegments.push({
@@ -311,36 +331,6 @@ export default function EconomyDashboard({
     return [...list].sort((a, b) =>
       a.occurred_on === b.occurred_on ? b.id - a.id : b.occurred_on.localeCompare(a.occurred_on)
     );
-  }
-
-  async function addTransaction(e: FormEvent) {
-    e.preventDefault();
-    const amount = parseFloat(txAmount);
-    if (!txCategory || !Number.isFinite(amount) || amount <= 0) {
-      setError("Choose a category and enter a positive amount");
-      return;
-    }
-    setTxSubmitting(true);
-    try {
-      const res = await fetch("/api/economy/transactions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          description: txCategory,
-          amount,
-          type: txType,
-          occurred_on: todayISO(),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to add transaction");
-      setTransactions(prev => sortTransactions([...prev, data.transaction]));
-      setTxAmount("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add transaction");
-    } finally {
-      setTxSubmitting(false);
-    }
   }
 
   async function deleteTransaction(id: number) {
@@ -539,7 +529,7 @@ export default function EconomyDashboard({
   }
 
   return (
-    <div className="max-w-5xl flex flex-col gap-8">
+    <div className="w-full flex flex-col gap-8">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">Economy</h1>
         <div className="flex items-center gap-3">
@@ -563,43 +553,6 @@ export default function EconomyDashboard({
           >
             ›
           </button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="rounded-lg border border-red-300 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 text-sm px-4 py-2">
-          {error}
-        </div>
-      )}
-
-      <div className="order-2 sm:order-1 grid grid-cols-1 sm:grid-cols-[1fr_1.3fr] gap-3">
-        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-6">
-          <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">Net</p>
-          <p className={`text-5xl font-bold ${net < 0 ? "text-red-500 dark:text-red-400" : "text-emerald-700 dark:text-emerald-500"}`}>
-            {fmt(net)}
-          </p>
-          <div className="mt-5 pt-4 border-t border-zinc-100 dark:border-zinc-800 space-y-1.5">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-zinc-500 dark:text-zinc-400">Total earnings</span>
-              <span className="font-medium tabular-nums text-emerald-700 dark:text-emerald-500">{fmt(totalEarnings)}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-zinc-500 dark:text-zinc-400">Total spending</span>
-              <span className="font-medium tabular-nums text-red-500 dark:text-red-400">{fmt(totalSpending)}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-6 flex flex-col">
-          <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-3">Spending by category</p>
-          <CategoryDonut segments={donutSegments} centerLabel={fmt(totalSpending)} />
-        </div>
-      </div>
-
-      <section className="order-1 sm:order-2 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-6 space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium text-zinc-600 dark:text-zinc-300">Add entry</h2>
-
           <div className="relative" ref={menuRef}>
             <button
               type="button"
@@ -638,40 +591,37 @@ export default function EconomyDashboard({
             )}
           </div>
         </div>
+      </div>
 
-        <form onSubmit={addTransaction} className="flex flex-wrap items-end gap-2">
-          <div className="w-24">
-            <label className="block text-xs text-zinc-400 dark:text-zinc-500 mb-1">Amount</label>
-            <AmountInput value={txAmount} onChange={setTxAmount} />
+      {error && (
+        <div className="rounded-lg border border-red-300 dark:border-red-900 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 text-sm px-4 py-2">
+          {error}
+        </div>
+      )}
+
+      <div className="order-2 sm:order-1 grid grid-cols-1 sm:grid-cols-[1fr_1.3fr] gap-3">
+        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-6 flex flex-col items-center justify-center text-center">
+          <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">Net</p>
+          <p className={`text-5xl font-bold tabular-nums ${net < 0 ? "text-red-500 dark:text-red-400" : "text-emerald-700 dark:text-emerald-500"}`}>
+            {fmt(net)}
+          </p>
+          <div className="mt-5 pt-4 w-full max-w-sm border-t border-zinc-100 dark:border-zinc-800 space-y-1.5 text-left">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-zinc-500 dark:text-zinc-400">Total earnings</span>
+              <span className="font-medium tabular-nums text-emerald-700 dark:text-emerald-500">{fmt(totalEarnings)}</span>
+            </div>
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-zinc-500 dark:text-zinc-400">Total spending</span>
+              <span className="font-medium tabular-nums text-red-500 dark:text-red-400">{fmt(totalSpending)}</span>
+            </div>
           </div>
-          <div className="flex-1 min-w-[8rem]">
-            <label className="block text-xs text-zinc-400 dark:text-zinc-500 mb-1">Category</label>
-            {categories.length === 0 ? (
-              <p className="text-sm text-zinc-400 dark:text-zinc-500 py-1.5">Add a category in settings first</p>
-            ) : (
-              <select
-                value={txCategory}
-                onChange={e => setTxCategory(e.target.value)}
-                className="w-full rounded-lg border border-zinc-200 dark:border-zinc-800 bg-transparent px-3 py-1.5 text-sm"
-              >
-                {categories.map(c => (
-                  <option key={c.id} value={c.name}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-          <TypeToggle value={txType} onChange={setTxType} />
-          <button
-            type="submit"
-            disabled={txSubmitting || categories.length === 0}
-            className="rounded-lg px-3 py-1.5 text-sm font-medium bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            {txSubmitting ? "Adding…" : "Add"}
-          </button>
-        </form>
-      </section>
+        </div>
+
+        <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-6 flex flex-col">
+          <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-3 text-center">Spending by category</p>
+          <CategoryDonut segments={donutSegments} centerLabel={fmt(totalSpending)} />
+        </div>
+      </div>
 
       <section className="order-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-6 space-y-4">
         <h2 className="text-sm font-medium text-zinc-600 dark:text-zinc-300">Transactions</h2>

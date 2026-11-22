@@ -2,16 +2,21 @@ import crypto from "crypto";
 import { supabaseAdmin } from "./supabase-server";
 import { sendPushToAll } from "./push";
 import { eb, type EbTransaction } from "./enable-banking";
+import { removeMatchedPlaceholders } from "./economy";
 
 // Pulls booked transactions from the linked bank accounts into
 // economy_transactions. Each row gets an external_id (iban + the bank's
 // reference) so re-fetching an overlapping window never duplicates.
-// Transfers between the owner's own linked accounts are skipped, so moving
-// money from Danske to Revolut isn't counted as both expense and income.
+// Transfers between the owner's own linked accounts are labelled "Transfer"
+// (kept out of totals), so moving money between them isn't counted as both
+// expense and income.
 // New rows are categorised by economy_category_rules (merchant -> category),
 // otherwise "Uncategorized".
 
 export const UNCATEGORIZED = "Uncategorized";
+// Money moved between the owner's own accounts. Kept visible in the list but
+// left out of totals and Net (see EXCLUDED_CATEGORIES in EconomyDashboard).
+export const TRANSFER = "Transfer";
 const OVERLAP_DAYS = 5; // re-read a few days back: late-booked items appear after their date
 
 type AccountRow = {
@@ -64,7 +69,18 @@ export async function syncBankAccounts(onlyAccountId?: number): Promise<SyncResu
   if (error) throw new Error(error.message);
 
   const ownIbans = new Set((allAccounts ?? []).map(a => a.iban.replace(/\s/g, "").toUpperCase()));
-  const ruleMap = new Map((rules ?? []).map(r => [r.merchant.toLowerCase(), r.category]));
+  // Danish IBAN = DKkk + 4-digit reg. no. + 10-digit account no. Danske's
+  // transfer texts quote "reg account" instead of the IBAN.
+  const ownAccountNumbers = [...ownIbans].filter(i => i.startsWith("DK") && i.length === 18).map(i => i.slice(-10));
+  // A rule matches when its merchant text appears in the transaction's
+  // merchant (so "netto" covers every Netto store); the longest match wins.
+  const ruleList = (rules ?? [])
+    .map(r => ({ key: r.merchant.toLowerCase(), category: r.category }))
+    .sort((a, b) => b.key.length - a.key.length);
+  const categoryFor = (merchant: string) => {
+    const m = merchant.toLowerCase();
+    return ruleList.find(r => m.includes(r.key))?.category;
+  };
   const results: SyncResult[] = [];
 
   for (const acc of (accounts ?? []) as unknown as AccountRow[]) {
@@ -92,10 +108,8 @@ export async function syncBankAccounts(onlyAccountId?: number): Promise<SyncResu
 
         const debit = t.credit_debit_indicator === "DBIT";
         const counterIban = (debit ? t.creditor_account?.iban : t.debtor_account?.iban)?.replace(/\s/g, "").toUpperCase();
-        if (counterIban && ownIbans.has(counterIban)) {
-          skipped++;
-          continue;
-        }
+        const text = `${(debit ? t.creditor?.name : t.debtor?.name) ?? ""} ${(t.remittance_information ?? []).join(" ")}`.replace(/\s/g, "");
+        const isTransfer = (counterIban && ownIbans.has(counterIban)) || ownAccountNumbers.some(n => text.includes(n));
 
         const amount = Math.abs(parseFloat(t.transaction_amount.amount));
         if (!Number.isFinite(amount) || amount === 0) continue;
@@ -116,7 +130,7 @@ export async function syncBankAccounts(onlyAccountId?: number): Promise<SyncResu
         }
 
         rows.push({
-          description: ruleMap.get(merchant.toLowerCase()) ?? UNCATEGORIZED,
+          description: isTransfer ? TRANSFER : categoryFor(merchant) ?? UNCATEGORIZED,
           merchant,
           amount,
           type: debit ? "expense" : "income",
@@ -147,6 +161,10 @@ export async function syncBankAccounts(onlyAccountId?: number): Promise<SyncResu
       }
 
       await supabaseAdmin.from("bank_accounts").update({ last_synced_at: new Date().toISOString(), last_error: null }).eq("id", acc.id);
+      if (imported) {
+        await markTransferPairs();
+        await removeMatchedPlaceholders();
+      }
       results.push({ iban: acc.iban, imported, skipped });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -155,6 +173,38 @@ export async function syncBankAccounts(onlyAccountId?: number): Promise<SyncResu
     }
   }
   return results;
+}
+
+// The other leg of an own-account transfer often carries no account number
+// (e.g. incoming "ADAM BØTKJÆR"), so pair them up: an uncategorised expense
+// and income of the same amount, on different own accounts, within 2 days.
+export async function markTransferPairs() {
+  const { data } = await supabaseAdmin
+    .from("economy_transactions")
+    .select("id, amount, type, occurred_on, bank_account_id, description")
+    .not("bank_account_id", "is", null)
+    .in("description", [UNCATEGORIZED, TRANSFER]);
+  const rows = data ?? [];
+  const used = new Set<number>();
+  const ids: number[] = [];
+  const day = (d: string) => new Date(d).getTime() / 86400_000;
+  for (const out of rows.filter(r => r.type === "expense")) {
+    const match = rows.find(
+      r =>
+        r.type === "income" &&
+        !used.has(r.id) &&
+        r.bank_account_id !== out.bank_account_id &&
+        Number(r.amount) === Number(out.amount) &&
+        Math.abs(day(r.occurred_on) - day(out.occurred_on)) <= 2 &&
+        (r.description === UNCATEGORIZED || out.description === UNCATEGORIZED)
+    );
+    if (!match) continue;
+    used.add(match.id);
+    if (out.description !== TRANSFER) ids.push(out.id);
+    if (match.description !== TRANSFER) ids.push(match.id);
+  }
+  if (ids.length) await supabaseAdmin.from("economy_transactions").update({ description: TRANSFER }).in("id", ids);
+  return ids.length;
 }
 
 // Daily: push a reminder while any bank connection expires within a week

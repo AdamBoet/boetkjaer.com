@@ -19,6 +19,7 @@ export type RecurringItem = {
   amount: number;
   type: EntryType;
   category: string | null;
+  expected_until_bank?: boolean;
   created_at: string;
   updated_at: string;
 };
