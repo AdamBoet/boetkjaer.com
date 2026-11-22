@@ -285,17 +285,26 @@ function NotificationsTab({ setError }: { setError: (e: string | null) => void }
         </div>
       </section>
 
-      <section>
-        <h4 className={heading}>Mandarin · 暴实验室 app</h4>
-        <div className={group}>
-          {mandarin.map(t => (
-            <div key={t.id} className={row}>
-              <p className={`flex-1 min-w-0 text-sm truncate ${t.enabled ? "" : "text-zinc-400 dark:text-zinc-500"}`}>{t.label}</p>
-              <Switch on={t.enabled} label={t.label} disabled={busy === `t${t.id}`} onClick={() => flip(t)} />
+      {(
+        [
+          ["Economy", mandarin.filter(t => !t.id.startsWith("mandarin_"))],
+          ["Mandarin · 暴实验室 app", mandarin.filter(t => t.id.startsWith("mandarin_"))],
+        ] as const
+      ).map(([title, list]) =>
+        list.length ? (
+          <section key={title}>
+            <h4 className={heading}>{title}</h4>
+            <div className={group}>
+              {list.map(t => (
+                <div key={t.id} className={row}>
+                  <p className={`flex-1 min-w-0 text-sm truncate ${t.enabled ? "" : "text-zinc-400 dark:text-zinc-500"}`}>{t.label}</p>
+                  <Switch on={t.enabled} label={t.label} disabled={busy === `t${t.id}`} onClick={() => flip(t)} />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </section>
+          </section>
+        ) : null
+      )}
     </div>
   );
 }

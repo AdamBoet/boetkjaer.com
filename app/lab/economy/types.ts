@@ -9,6 +9,8 @@ export type Transaction = {
   occurred_on: string;
   created_at: string;
   recurring_item_id: number | null;
+  bank_account_id?: number | null;
+  external_id?: string | null;
 };
 
 export type RecurringItem = {

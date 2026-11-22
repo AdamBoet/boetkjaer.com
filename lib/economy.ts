@@ -4,6 +4,9 @@ function firstOfMonthISO(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
+// No longer called: the bank sync (lib/bank-sync.ts) imports the real
+// payments, so auto-adding fixed items would count them twice. Kept in case
+// manual-only tracking is wanted again.
 export async function ensureMonthlyFixedTransactions() {
   const occurredOn = firstOfMonthISO();
 

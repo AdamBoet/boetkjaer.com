@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-server";
 import { sendPushToAll } from "@/lib/push";
+import { remindExpiringBankAccess, syncBankAccounts } from "@/lib/bank-sync";
 import { inQuietHours, localParts, nextDue, quietEndAfter, type HabitRow } from "@/lib/habits";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 // Called every 5 minutes by a Supabase pg_cron job (see
 // data/habits-migration.sql), not by Vercel Cron, which only runs daily on
@@ -63,7 +64,20 @@ export async function POST(req: NextRequest) {
 
   const daily = await sendDailyReminders(now);
 
-  return NextResponse.json({ ok: true, results, daily });
+  // Once a day at 05:00 Copenhagen: import new bank transactions and warn
+  // about bank access that's about to expire. Banks allow only ~4
+  // unattended reads per account per day, so this must not run every tick.
+  let bank: unknown = null;
+  const lp = localParts(now);
+  if (lp.h === 5 && lp.mi < 5) {
+    try {
+      bank = { sync: await syncBankAccounts(), expiring: await remindExpiringBankAccess(now) };
+    } catch (e) {
+      bank = { error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  return NextResponse.json({ ok: true, results, daily, bank });
 }
 
 export const GET = POST;

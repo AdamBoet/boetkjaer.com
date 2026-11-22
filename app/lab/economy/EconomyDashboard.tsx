@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, type FormEvent } from "react";
 import { type Transaction, type RecurringItem, type Category, type EntryType } from "./types";
+import BankPanel from "./BankPanel";
 
 const numberFormat = new Intl.NumberFormat("da-DK", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -214,6 +215,7 @@ export default function EconomyDashboard({
   const [editTxMerchant, setEditTxMerchant] = useState("");
   const [editTxType, setEditTxType] = useState<EntryType>("expense");
   const [editTxSubmitting, setEditTxSubmitting] = useState(false);
+  const [editTxRule, setEditTxRule] = useState(false);
 
   useEffect(() => {
     if (!txCategory && categories.length > 0) {
@@ -357,6 +359,7 @@ export default function EconomyDashboard({
     setEditTxAmount(String(t.amount));
     setEditTxMerchant(t.merchant ?? "");
     setEditTxType(t.type);
+    setEditTxRule(false);
   }
 
   async function saveEditTx(id: number) {
@@ -379,7 +382,21 @@ export default function EconomyDashboard({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to update transaction");
-      setTransactions(prev => sortTransactions(prev.map(t => (t.id === id ? data.transaction : t))));
+      let updated: Transaction[] = [data.transaction];
+      // "Always use this category for <merchant>": save the rule and pick up
+      // the other uncategorised bank rows it re-categorised.
+      if (editTxRule && data.transaction.merchant && editTxCategory !== "Uncategorized") {
+        const ruleRes = await fetch("/api/economy/rules", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ merchant: data.transaction.merchant, category: editTxCategory }),
+        });
+        const ruleData = await ruleRes.json();
+        if (!ruleRes.ok) throw new Error(ruleData.error ?? "Failed to save rule");
+        updated = [...updated, ...(ruleData.updated as Transaction[])];
+      }
+      const byId = new Map(updated.map(u => [u.id, u]));
+      setTransactions(prev => sortTransactions(prev.map(t => byId.get(t.id) ?? t)));
       setEditingTxId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update transaction");
@@ -671,6 +688,7 @@ export default function EconomyDashboard({
                   onChange={e => setEditTxCategory(e.target.value)}
                   className="flex-1 min-w-[7rem] rounded-lg border border-zinc-200 dark:border-zinc-800 bg-transparent px-2 py-1 text-sm"
                 >
+                  {!categories.some(c => c.name === editTxCategory) && <option value={editTxCategory}>{editTxCategory}</option>}
                   {categories.map(c => (
                     <option key={c.id} value={c.name}>
                       {c.name}
@@ -688,6 +706,12 @@ export default function EconomyDashboard({
                   className="flex-1 min-w-[6rem] rounded-lg border border-zinc-200 dark:border-zinc-800 bg-transparent px-2 py-1 text-sm"
                 />
                 <TypeToggle value={editTxType} onChange={setEditTxType} />
+                {t.bank_account_id && editTxMerchant.trim() && (
+                  <label className="basis-full flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+                    <input type="checkbox" checked={editTxRule} onChange={e => setEditTxRule(e.target.checked)} />
+                    Always use this category for &ldquo;{editTxMerchant.trim()}&rdquo;
+                  </label>
+                )}
                 <button
                   onClick={() => saveEditTx(t.id)}
                   disabled={editTxSubmitting}
@@ -729,6 +753,8 @@ export default function EconomyDashboard({
           )}
         </div>
       </section>
+
+      <BankPanel />
 
       {settingsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

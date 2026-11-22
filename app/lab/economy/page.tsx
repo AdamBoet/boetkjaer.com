@@ -1,13 +1,13 @@
 import { supabaseAdmin } from "@/lib/supabase-server";
-import { ensureMonthlyFixedTransactions } from "@/lib/economy";
 import EconomyDashboard from "./EconomyDashboard";
 import { type Transaction, type RecurringItem, type Category } from "./types";
 
 export const dynamic = "force-dynamic";
 
 export default async function EconomyPage() {
-  const [, { data: recurringItems }, { data: categories }] = await Promise.all([
-    ensureMonthlyFixedTransactions(),
+  // Fixed monthly items are a list/budget only now; the bank sync brings the
+  // real payments (lib/bank-sync.ts), so they no longer create transactions.
+  const [{ data: recurringItems }, { data: categories }] = await Promise.all([
     supabaseAdmin.from("economy_recurring_items").select("*").order("created_at", { ascending: true }),
     supabaseAdmin.from("economy_categories").select("*").order("name", { ascending: true }),
   ]);

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-server";
-import { ensureMonthlyFixedTransactions } from "@/lib/economy";
 
 export async function POST(req: NextRequest) {
   const { name, amount, type, category } = await req.json();
@@ -26,7 +25,6 @@ export async function POST(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const newTransactions = await ensureMonthlyFixedTransactions();
 
-  return NextResponse.json({ item: data, transactions: newTransactions }, { status: 201 });
+  return NextResponse.json({ item: data, transactions: [] }, { status: 201 });
 }
