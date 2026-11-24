@@ -344,12 +344,25 @@ def generate_translation(sentence: str, word: str | None = None, meaning: str | 
     raise ValueError(f"translation still contains Chinese after {TRANSLATION_REPAIR_ATTEMPTS} attempts: {translation!r}")
 
 
+# pypinyin's phrase dictionary bakes in the spoken tone change (tone sandhi)
+# for 一 and 不 — 一见钟情 comes out "yí jiàn", 大吃一惊 "yì jīng". The decks
+# use dictionary (citation) tones instead, matching the lookup tool and
+# CC-CEDICT, so those two characters are always forced back to yī / bù.
+CITATION_TONES = {"一": "yī", "不": "bù"}
+
+
+def _syllables(text: str) -> list[str]:
+    syllables = [s[0] for s in pinyin(text, style=Style.TONE)]
+    if len(syllables) == len(text):  # one syllable per character
+        syllables = [CITATION_TONES.get(ch, py) for ch, py in zip(text, syllables)]
+    return syllables
+
+
 def _jieba_pinyin(text: str) -> str:
     words = jieba.lcut(text)
     parts = []
     for w in words:
-        syllables = pinyin(w, style=Style.TONE)
-        parts.append("".join(s[0] for s in syllables))
+        parts.append("".join(_syllables(w)))
     return " ".join(parts)
 
 
@@ -368,8 +381,7 @@ def generate_word_pinyin(word: str) -> str:
     often treats a short word as a single token, which collapsed multi-
     syllable words into one unspaced blob (e.g. "bèngdí" for 蹦迪,
     "nàishuǐxìng" for 耐水性), contradicting the documented convention."""
-    syllables = pinyin(word, style=Style.TONE)
-    return " ".join(s[0] for s in syllables)
+    return " ".join(_syllables(word))
 
 
 def synthesize(text: str, voice: str = DEFAULT_SETTINGS["voice"], speed: float = 1.0):
