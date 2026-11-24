@@ -1113,19 +1113,22 @@ def build_components(components: dict, char: str, front: str) -> str:
     return ", ".join(f"{c} ({m})" for c, m in picked)
 
 
+# Unstudied hanzi cards kept ready beyond the daily "new cards" setting.
+HANZI_NEW_BUFFER = 5
+
+
 def replenish_hanzi_new_cards(limit=None, settings=None):
     settings = settings if settings is not None else load_settings()
     target = get_new_cards_target(settings, "hanzi")
     word_count = get_setting(settings, "hanzi", "word_count")
     voice = get_setting(settings, "hanzi", "voice")
 
-    # Adds a fresh batch of `target` cards on top of any still-unstudied
-    # ones (the site shows every never-studied hanzi card), but only once
-    # the pile is down below `target` — so it never climbs past 2x target-1
-    # and missed days don't snowball. This also makes a same-day manual
-    # re-run a no-op.
+    # The site only shows `target` new hanzi cards per day (like the other
+    # decks), so the pool here is just stock: top it up to tomorrow's
+    # `target` plus a small buffer, so the deck never runs dry and a raised
+    # setting takes effect right away. Re-running the same day is a no-op.
     current_new = len(sb_select_all("hanzi_cards", "select=note_id&or=(reps.eq.0,reps.is.null)"))
-    shortfall = target if current_new < target else 0
+    shortfall = max(0, target + HANZI_NEW_BUFFER - current_new)
     if limit is not None:
         shortfall = min(shortfall, limit)
     print(f"hanzi_cards: {current_new} new cards, target {target}, shortfall {shortfall}.")
@@ -1726,11 +1729,8 @@ def build_deck_summary(settings: dict) -> tuple[str, int, int]:
     total_new = total_learn = total_due = 0
     for deck_key, label, cards in decks:
         new, learn, due = classify(cards)
-        # Hanzi is uncapped on the site (see newCardAllowance there) — every
-        # unstudied card, yesterday's leftovers included, is up for review.
-        cap = None if deck_key == "hanzi" else get_setting(settings, deck_key, "new_cards")
-        if cap is not None:
-            new = min(new, cap)
+        # Same per-day cap the site applies (see newCardAllowance there).
+        new = min(new, get_new_cards_target(settings, deck_key))
         total_new += new
         total_learn += learn
         total_due += due

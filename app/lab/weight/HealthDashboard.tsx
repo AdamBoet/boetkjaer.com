@@ -166,12 +166,23 @@ export default function HealthDashboard({
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const weekStart = new Date(todayStart);
-  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7)); // Monday
+  weekStart.setDate(weekStart.getDate() - 6); // last 7 days, today included
   const today = entries.find(e => new Date(e.created_at) >= todayStart);
   const weekEntries = entries.filter(e => new Date(e.created_at) >= weekStart);
   const weekAvg = weekEntries.length
     ? weekEntries.reduce((sum, e) => sum + e.weight_kg, 0) / weekEntries.length
     : null;
+  // Change vs the 7 days before that (days 7–13 ago).
+  const prevWeekStart = new Date(weekStart);
+  prevWeekStart.setDate(prevWeekStart.getDate() - 7);
+  const prevEntries = entries.filter(e => {
+    const t = new Date(e.created_at);
+    return t >= prevWeekStart && t < weekStart;
+  });
+  const prevAvg = prevEntries.length
+    ? prevEntries.reduce((sum, e) => sum + e.weight_kg, 0) / prevEntries.length
+    : null;
+  const weekChange = weekAvg != null && prevAvg != null ? weekAvg - prevAvg : null;
 
   return (
     <div className="max-w-2xl space-y-8">
@@ -238,9 +249,18 @@ export default function HealthDashboard({
               </p>
             </div>
             <div className="text-center px-2">
-              <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">Weekly average</p>
+              <p className="text-xs text-zinc-400 dark:text-zinc-500 mb-1">7-day average</p>
               <p className="text-3xl sm:text-4xl font-bold tabular-nums">
                 {weekAvg != null ? `${kgFormat.format(weekAvg)} kg` : "—"}
+                {weekChange != null && Math.abs(weekChange) >= 0.05 && (
+                  <span
+                    className={`ml-2 align-middle text-sm sm:text-base font-semibold ${weekChange > 0 ? "text-green-600 dark:text-green-500" : "text-red-500 dark:text-red-400"}`}
+                    title="vs the previous 7 days"
+                  >
+                    {weekChange > 0 ? "+" : "−"}
+                    {kgFormat.format(Math.abs(weekChange))}
+                  </span>
+                )}
               </p>
             </div>
           </div>

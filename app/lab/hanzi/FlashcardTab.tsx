@@ -556,14 +556,12 @@ function buildQueue(
   };
 }
 
-// How many more new cards a deck may introduce today. Hanzi is uncapped:
-// daily_refresh.py adds exactly the configured number of fresh cards each
-// night, so every never-studied hanzi card is one you're meant to see —
-// yesterday's unfinished ones plus tonight's. The other decks draw from a
-// large pre-imported pool (thousands of HSK3 words), so they keep the
-// "New cards per session" setting as a per-day allowance.
+// How many more new cards a deck may introduce today: the deck's "New cards
+// per day" setting minus the distinct new cards already studied today. For
+// hanzi, daily_refresh.py keeps a small buffer of ready-made unstudied cards
+// beyond that number, so the deck never runs dry — the buffer stays hidden
+// until the allowance lets it through.
 function newCardAllowance(key: DeckKey, introducedToday: number): number {
-  if (key === "hanzi") return Infinity;
   return Math.max(0, loadNewCards(key) - introducedToday);
 }
 
@@ -2845,10 +2843,8 @@ export default function FlashcardTab({
         ? randomWords.map((card) => ({ key: "random_words" as const, card }))
         : idioms.map((card) => ({ key: "idioms" as const, card }));
     // Zero (not the cached/stale count) while a fresh fetch of today's
-    // real total is in flight — see newTodayFetched above. (Hanzi doesn't
-    // depend on that count at all, so it never needs to wait.)
-    const newCardsLimit =
-      selectedDeck === "hanzi" || newTodayFetched ? newCardAllowance(selectedDeck, newToday[selectedDeck]) : 0;
+    // real total is in flight — see newTodayFetched above.
+    const newCardsLimit = newTodayFetched ? newCardAllowance(selectedDeck, newToday[selectedDeck]) : 0;
     const built = buildQueue(items, loadMaxReviews(selectedDeck), newCardsLimit);
     const saved = savedOrders[selectedDeck];
     return saved ? { ...built, queue: applySavedOrder(built.queue, saved) } : built;
@@ -2856,7 +2852,7 @@ export default function FlashcardTab({
 
   // Waits for both fetches so the order saved below already includes the
   // day's real new-card allowance (see newTodayFetched).
-  const sessionReady = savedOrdersFetched && (selectedDeck === "hanzi" || newTodayFetched);
+  const sessionReady = savedOrdersFetched && newTodayFetched;
 
   // First session of the day for this deck: save its order so re-entering
   // later (here or on another device) resumes it. Kept locally too, so a

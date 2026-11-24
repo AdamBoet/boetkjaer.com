@@ -61,11 +61,11 @@ export default async function Overview() {
     .reduce((s, t) => s + (t.type === "income" ? t.amount : -t.amount), 0);
   const net = totalEarnings - totalSpending + businessNet;
 
-  // Weight: latest entry, this week's average (Mon–) vs last week's.
+  // Weight: latest entry, the last 7 days' average (today included) vs the 7 days before.
   const weightRows = (weights ?? []).map(w => ({ kg: Number(w.weight_kg), at: new Date(w.created_at) }));
   const weekStart = new Date(today);
   weekStart.setHours(0, 0, 0, 0);
-  weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+  weekStart.setDate(weekStart.getDate() - 6);
   const lastWeekStart = new Date(weekStart.getTime() - 7 * 86400_000);
   const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
   const latestWeight = weightRows[0] ?? null;
@@ -130,11 +130,11 @@ export default async function Overview() {
               <p className="text-4xl font-bold text-center tabular-nums">{kgFormat.format(latestWeight.kg)} kg</p>
               <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800 space-y-1.5">
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-zinc-500 dark:text-zinc-400">Weekly average</span>
+                  <span className="text-zinc-500 dark:text-zinc-400">7-day average</span>
                   <span className="font-medium tabular-nums">{thisWeekAvg != null ? `${kgFormat.format(thisWeekAvg)} kg` : "—"}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-zinc-500 dark:text-zinc-400">vs last week</span>
+                  <span className="text-zinc-500 dark:text-zinc-400">vs previous 7 days</span>
                   <span className="font-medium tabular-nums">
                     {weekChange != null ? `${weekChange > 0 ? "+" : weekChange < 0 ? "−" : "±"}${kgFormat.format(Math.abs(weekChange))} kg` : "—"}
                   </span>

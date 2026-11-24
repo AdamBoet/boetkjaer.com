@@ -127,8 +127,9 @@ export default function WeightChart({ entries }: { entries: WeightEntry[] }) {
   const innerW = Math.max(width - PAD.left - PAD.right, 50);
   const innerH = HEIGHT - PAD.top - PAD.bottom;
 
-  const scaleSource = visible.length ? visible : drawn;
-  const weights = scaleSource.map(p => p.w);
+  // Fixed y-axis: scaled to every entry ever logged, not just the visible
+  // window, so it doesn't jump around when switching weeks/months.
+  const weights = all.map(p => p.w);
   let lo = Math.min(...weights);
   let hi = Math.max(...weights);
   if (!weights.length) { lo = 0; hi = 1; }
