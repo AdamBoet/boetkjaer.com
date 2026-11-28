@@ -65,7 +65,16 @@ function SaturationCurve({ freq, valuePct }: { freq: FreqEntry[]; valuePct: numb
   }
 
   const yTicks = [0, 25, 50, 75, 100];
-  const xTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round((f * xMax) / 100) * 100);
+  // Round-number ticks (0, 1k, 2k, …). Quarter-of-xMax ticks rounded to
+  // the nearest 100 gave 1300/2500/3800, which the "k" label then rounded
+  // again into a misleading 1k/3k/4k.
+  const xStep = xMax >= 2000 ? 1000 : xMax >= 400 ? 100 : 10;
+  const xTicks: number[] = [];
+  for (let r = 0; r <= xMax; r += xStep) xTicks.push(r);
+  // The dot's own green rank/% labels sit on the axes too — drop any grey
+  // tick label they'd overprint (e.g. "1k" under "1.393", "100%" under "93.7%").
+  const xTickVisible = (rank: number) => !dot || Math.abs(xScale(rank) - dot.x) > 24;
+  const yTickVisible = (t: number) => !dot || Math.abs(yScale(t) - dot.y) > 10;
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto overflow-visible">
@@ -94,7 +103,7 @@ function SaturationCurve({ freq, valuePct }: { freq: FreqEntry[]; valuePct: numb
           </text>
         </>
       )}
-      {yTicks.map((t) => (
+      {yTicks.filter(yTickVisible).map((t) => (
         <text
           key={t}
           x={pad.left - 4}
@@ -106,7 +115,7 @@ function SaturationCurve({ freq, valuePct }: { freq: FreqEntry[]; valuePct: numb
           {t}%
         </text>
       ))}
-      {xTicks.map((rank) => (
+      {xTicks.filter(xTickVisible).map((rank) => (
         <text
           key={rank}
           x={xScale(rank)}
@@ -115,7 +124,7 @@ function SaturationCurve({ freq, valuePct }: { freq: FreqEntry[]; valuePct: numb
           className="fill-zinc-400 dark:fill-zinc-500"
           style={{ fontSize: 9 }}
         >
-          {rank >= 1000 ? `${Math.round(rank / 1000)}k` : rank}
+          {rank >= 1000 && rank % 1000 === 0 ? `${rank / 1000}k` : rank.toLocaleString("da-DK")}
         </text>
       ))}
     </svg>
@@ -199,17 +208,25 @@ export default function HanziTab({
   const remaining = Math.max(yearlyGoal - learnedCount, 0);
   const yearPct = Math.round((dayOfYear / daysInYear) * 100);
 
-  const expectedByNow = dayOfYear * cardsPerDay;
+  // Pace is measured against the yearly goal (goal ÷ days in year), not the
+  // deck's new-cards/day setting: that setting can be 0 (new cards paused),
+  // which divided by zero into "Infinity days skipped", and it says nothing
+  // about whether you're actually on track for the goal.
+  const goalPerDay = yearlyGoal / daysInYear;
+  const expectedByNow = dayOfYear * goalPerDay;
   const cardDelta = learnedCount - expectedByNow;
-  const daysDelta = Math.round(Math.abs(cardDelta) / cardsPerDay);
+  const daysDelta = Math.round(Math.abs(cardDelta) / goalPerDay);
 
+  // Skip/catch-up use your real daily rate (new cards/day); with that at 0
+  // there's no rate to plan with, so both lines are replaced by a hint.
   const daysLeftInYear = daysInYear - dayOfYear;
-  const daysNeeded = Math.ceil(remaining / cardsPerDay);
+  const ratePaused = cardsPerDay <= 0;
+  const daysNeeded = ratePaused ? Infinity : Math.ceil(remaining / cardsPerDay);
   const daysCanSkip = Math.max(0, daysLeftInYear - daysNeeded);
-  const daysToCatchup = Math.max(
-    0,
-    Math.ceil((yearlyGoal * dayOfYear - daysInYear * learnedCount) / (cardsPerDay * daysInYear - yearlyGoal))
-  );
+  // Days at cardsPerDay until you're back on the goal line; impossible if
+  // your rate doesn't beat the goal pace.
+  const daysToCatchup =
+    cardDelta >= 0 ? 0 : cardsPerDay > goalPerDay ? Math.ceil(-cardDelta / (cardsPerDay - goalPerDay)) : Infinity;
 
   // "Unlocked" = every character in the word is one you've learned in the
   // Hanzi deck, even if you've never studied that word directly.
@@ -290,15 +307,21 @@ export default function HanziTab({
           <div className="rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm dark:shadow-none p-6 space-y-4">
             <div className="flex flex-col items-center gap-2 text-sm text-center">
               <p>
-                <span className={`font-bold ${cardDelta < 0 ? "text-red-500" : ""}`}>{daysDelta} days</span>
-                {" skipped"}
+                <span className={`font-bold ${cardDelta < 0 ? "text-red-500" : "text-emerald-600 dark:text-emerald-500"}`}>{daysDelta} days</span>
+                {cardDelta < 0 ? " behind" : " ahead"}
               </p>
+              {ratePaused ? (
+                <p className="text-zinc-500 dark:text-zinc-400">new cards are paused (0/day)</p>
+              ) : (
+              <>
               <p className="text-zinc-500 dark:text-zinc-400">
                 {"skip no more than "}
                 <span className={`font-bold ${daysCanSkip <= 0 ? "text-red-500" : "text-zinc-700 dark:text-zinc-200"}`}>{daysCanSkip} days</span>
               </p>
               <p className="text-zinc-500 dark:text-zinc-400">
-                {daysToCatchup > 0 ? (
+                {daysToCatchup === Infinity ? (
+                  <>raise new cards/day above {Math.ceil(goalPerDay)} to catch up</>
+                ) : daysToCatchup > 0 ? (
                   <>
                     {"stay consistent for "}
                     <span className="font-bold text-amber-500">{daysToCatchup} days</span>
@@ -308,6 +331,8 @@ export default function HanziTab({
                   <>you&apos;re on pace</>
                 )}
               </p>
+              </>
+              )}
             </div>
             <div className="flex items-center justify-center gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
               <label className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
