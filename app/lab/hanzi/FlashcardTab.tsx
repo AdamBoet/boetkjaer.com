@@ -2902,6 +2902,24 @@ export default function FlashcardTab({
     }
   }, [selectedDeck, cards, hsk3Known, randomWords, idioms, menuPrefetchedUrls]);
 
+  // Esc = back to the deck list from the deck-overview screen and from the
+  // "All caught up!" screen. Inside a live review session ReviewSession
+  // owns Escape itself, so this only listens when no session is mounted.
+  const sessionEmpty = sessionReady && queue.length === 0 && pending.length === 0;
+  const escToDecks = !!overviewFor && (!selectedDeck || sessionEmpty);
+  useEffect(() => {
+    if (!escToDecks) return;
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && !e.defaultPrevented) {
+        e.preventDefault();
+        setSelectedDeck(null);
+        setOverviewFor(null);
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [escToDecks]);
+
   if (!overviewFor && !selectedDeck) {
     return (
       <div className="min-h-[70vh] flex flex-col items-center justify-center gap-3">

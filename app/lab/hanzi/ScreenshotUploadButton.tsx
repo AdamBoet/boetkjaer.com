@@ -80,6 +80,9 @@ export default function ScreenshotUploadButton({ targetSource }: { targetSource:
     if (!showPopup) return;
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
+        // Claimed here (capture phase, below) so the deck-overview screen's
+        // own Esc-to-decks handler sees defaultPrevented and stays put.
+        e.preventDefault();
         if (confirmDeleteId !== null) setConfirmDeleteId(null);
         else setShowPopup(false);
       } else if (e.key === "ArrowRight") goTo(1);
@@ -89,8 +92,8 @@ export default function ScreenshotUploadButton({ targetSource }: { targetSource:
         if (s) setConfirmDeleteId(s.id);
       }
     }
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
+    window.addEventListener("keydown", handleKey, true);
+    return () => window.removeEventListener("keydown", handleKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showPopup, pending, viewIndex, confirmDeleteId]);
 
